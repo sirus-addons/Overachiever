@@ -87,7 +87,7 @@ function Overachiever.CreateOptions(THIS_TITLE, BuildCriteriaLookupTab_check, Au
 	{ variable = "Item_consumed", text = L.OPT_CONSUMEITEMTIPS, tooltip = L.OPT_CONSUMEITEMTIPS_TIP, tooltip2 = L.OPT_CONSUMEITEMTIPS_TIP2 },
 	{ variable = "Item_consumed_whencomplete", text = L.OPT_CONSUMEITEMTIPS_WHENCOMPLETE, xOffset = 10 },
 
-	{ type = "labelwrap", text = L.OPT_LABEL_SEASONALACHS, justifyH = "CENTER", topBuffer = 16 },
+	{ type = "labelwrap", text = L.OPT_LABEL_SEASONALACHS, justifyH = "CENTER", topBuffer = 16, xOffset = 0 },
 
 	{ type = "Oa_AchLabel", topBuffer = 4, xOffset = 0, id1 = IDs.FistfulOfLove },
 	{ variable = "FistfulOfLove_petals", text = L.OPT_FISTFULOFLOVETIPS, tooltip = L.OPT_FISTFULOFLOVETIPS_TIP },
@@ -195,17 +195,17 @@ do
     function CreateAchLabel_pre(name, parent, data, arg)
       local first = createicon(name, 1, parent, data.id1)
       data.icon1 = first
-      local i, v, last, w, iconframe = 2, data.id2, first, 28
+      local i, v, last, iconframe = 2, data.id2, first
       while (v) do
         iconframe = createicon(name, i, parent, v)
         iconframe:SetPoint("LEFT", last, "RIGHT", 2, 0)
         last = iconframe
-        w, i = w + 23, i + 1
+        i = i + 1
         v = data["id"..i]
       end
       data.iconN = last
       data.justifyH = data.justifyH or "LEFT"
-      data.width = data.width or (369 - w)
+      if (not data.width) then  data.fitWidth = true;  end
 
       local text = data.text
       if (not text) then
@@ -224,7 +224,7 @@ do
     frame:SetPoint("LEFT", data.iconN, "RIGHT", 4, 1)
     local icon1 = data.icon1
     data.icon1, data.iconN = nil, nil
-    return true, icon1, handletip, xOffset + 4, yOffset - 6, btmBuffer
+    return true, icon1, handletip, xOffset, yOffset - 6, btmBuffer
   end
 
   TjOptions.RegisterItemType("Oa_AchLabel", tonumber(THIS_VERSION) or 0, "labelwrap",

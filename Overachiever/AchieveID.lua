@@ -117,6 +117,7 @@ end
 OVERACHIEVER_CATEGORY_HEROIC = {
 	[14921] = true, -- Lich King Dungeon
 	[14923] = true, -- Lich King 25-Player Raid
+	[15052] = true,
 };
 
 OVERACHIEVER_CATEGORY_25 = {
@@ -124,6 +125,7 @@ OVERACHIEVER_CATEGORY_25 = {
 	[14962] = true,			-- Secrets of Ulduar 25-Player Raid
 	[15002] = true,			-- Call of the Crusade 25-Player Raid
 	[15042] = true,			-- Fall of the Lich King 25-Player Raid
+	[15054] = true,
 };
 
 OVERACHIEVER_HEROIC_CRITERIA = {

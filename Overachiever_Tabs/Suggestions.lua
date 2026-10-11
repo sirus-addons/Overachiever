@@ -161,7 +161,6 @@ local ACHID_INSTANCES = {
 -- Classic Raids
 	["Zul'Gurub"] = { 688, 560, 957 },	-- "Zul'Gurub", "Deadliest Catch", "Hero of the Zandalar"
 	["Ruins of Ahn'Qiraj"] = 689,
-	--["Onyxia's Lair"] = 684, -- This is now a Feat of Strength
 	["Molten Core"] = 686,
 	["Blackwing Lair"] = 685,
 	["Temple of Ahn'Qiraj"] = 687,
@@ -279,24 +278,20 @@ local ACHID_INSTANCES_10 = {
 	["The Obsidian Sanctum"] = { 1876, 2047, 2049, 2050, 2051, 624 },
 	["Ulduar"] = { 2957, 2903, 2894,
 		SUBZONES = {
-			--["*Formation Grounds*The Colossal Forge*Razorscale's Aerie*The Scrapyard*"] = 2886, -- Siege
 			["Formation Grounds"] = { 3097, 2905, 2907, 2909, 2911, 2913 },
 			["Razorscale's Aerie"] = { 2919, 2923 },
 			["The Colossal Forge"] = { 2925, 2927, 2930 },
 			["The Scrapyard"] = { 2931, 2933, 2934, 2937, 3058 },
 
-			--["*The Assembly of Iron*The Shattered Walkway*The Observation Ring*"] = 2888, -- Antechamber
 			["The Assembly of Iron"] = { 2939, 2940, 2941, 2945, 2947 },
 			["The Shattered Walkway"] = { 2951, 2953, 2955, 2959 },
 			["The Observation Ring"] = { 3006, 3076 },
 
-			--["*The Spark of Imagination*The Conservatory of Life*The Clash of Thunder*The Halls of Winter*"] = 2890, -- Keepers
 			["The Halls of Winter"] = { 2961, 2963, 2967, 3182, 2969 },
 			["The Clash of Thunder"] = { 2971, 2973, 2975, 2977 },
 			["The Conservatory of Life"] = { 2979, 2980, 2985, 2982, 3177 },
 			["The Spark of Imagination"] = { 2989, 3138, 3180 },
 
-			--["*The Descent into Madness*The Prison of Yogg-Saron*"] = 2892, -- Descent
 			["The Descent into Madness"] = { 2996, 3181 },
 			["The Prison of Yogg-Saron"] = { 3009, 3157, 3008, 3012, 3014, 3015 },
 
@@ -318,24 +313,20 @@ local ACHID_INSTANCES_25 = {
 	["The Obsidian Sanctum"] = { 625, 2048, 2052, 2053, 2054, 1877 },
 	["Ulduar"] = { 2958, 2904, 2895,
 		SUBZONES = {
-			--["*Formation Grounds*The Colossal Forge*Razorscale's Aerie*The Scrapyard*"] = 2887, -- Siege
 			["Formation Grounds"] = { 3098, 2906, 2908, 2910, 2912, 2918 },
 			["Razorscale's Aerie"] = { 2921, 2924 },
 			["The Colossal Forge"] = { 2926, 2928, 2929 },
 			["The Scrapyard"] = { 2932, 2935, 2936, 2938, 3059 },
 
-			--["*The Assembly of Iron*The Shattered Walkway*The Observation Ring*"] = 2889, -- Antechamber
 			["The Assembly of Iron"] = { 2942, 2943, 2944, 2946, 2948 },
 			["The Shattered Walkway"] = { 2952, 2954, 2956, 2960 },
 			["The Observation Ring"] = { 3007, 3077 },
 
-			--["*The Spark of Imagination*The Conservatory of Life*The Clash of Thunder*The Halls of Winter*"] = 2891, -- Keepers
 			["The Halls of Winter"] = { 2962, 2965, 2968, 3184, 2970 },
 			["The Clash of Thunder"] = { 2972, 2974, 2976, 2978 },
 			["The Conservatory of Life"] = { 3118, 2981, 2984, 2983, 3185 },
 			["The Spark of Imagination"] = { 3237, 2995, 3189 },
 
-			--["*The Descent into Madness*The Prison of Yogg-Saron*"] = 2893, -- Descent
 			["The Descent into Madness"] = { 2997, 3188 },
 			["The Prison of Yogg-Saron"] = { 3011, 3161, 3010, 3013, 3017, 3016 },
 
@@ -350,23 +341,27 @@ local ACHID_INSTANCES_25 = {
 -- INSTANCES - NORMAL 10-MAN ONLY:
 local ACHID_INSTANCES_10_NORMAL = {
 	["Icecrown Citadel"] = 4532,
+	["The Ruby Sanctum"] = 4817,
 }
 
 -- INSTANCES - HEROIC 10-MAN ONLY:
 local ACHID_INSTANCES_10_HEROIC = {
 	["Trial of the Crusader"] = { 3918, 3808 },
 	["Icecrown Citadel"] = 4636,
+	["The Ruby Sanctum"] = 4818,
 }
 
 -- INSTANCES - NORMAL 25-MAN ONLY:
 local ACHID_INSTANCES_25_NORMAL = {
 	["Icecrown Citadel"] = 4608,
+	["The Ruby Sanctum"] = 4815,
 }
 
 -- INSTANCES - HEROIC 25-MAN ONLY:
 local ACHID_INSTANCES_25_HEROIC = {
 	["Trial of the Crusader"] = { 3812, 3817 },
 	["Icecrown Citadel"] = 4637,
+	["The Ruby Sanctum"] = 4816,
 }
 
 
@@ -374,10 +369,17 @@ local ACHID_INSTANCES_25_HEROIC = {
 local SUBZONES_REV = {}
 for k,v in pairs(L.SUBZONES) do  SUBZONES_REV[v] = k;  end
 
+local ZONE_ALIASES = {
+	["Shattrath"] = "Shattrath City",
+	["Stormwind"] = "Stormwind City",
+	["The Argent Coliseum"] = "Trial of the Crusader",
+}
+
 local function ZoneLookup(zoneName, isSub, subz)
   zoneName = zoneName or subz or ""
   local trimz = strtrim(zoneName)
-  return isSub and SUBZONES_REV[trimz] or LBZR[trimz] or LBZR[zoneName] or trimz
+  local zone = isSub and SUBZONES_REV[trimz] or LBZR[trimz] or LBZR[zoneName] or trimz
+  return ZONE_ALIASES[zone] or zone
 end
 
 
@@ -546,9 +548,10 @@ local function Refresh(self)
   if (zone) then
     zone = LocationsList[zone]
     EditZoneOverride:SetText(zone)
+    zone = ZoneLookup(zone)
     if (self ~= subzdrop) then  subzdrop_Update(zone);  end
     local subz = subzdrop:GetSelectedValue()
-    if (subz ~= 0) then  CurrentSubzone = subz;  end
+    if (subz ~= 0) then  CurrentSubzone = ZoneLookup(subz, true);  end
   else
     zone = ZoneLookup(GetRealZoneText(), nil, CurrentSubzone)
     EditZoneOverride:SetTextColor(0.75, 0.1, 0.1)
@@ -563,7 +566,7 @@ local function Refresh(self)
   -- Suggestions based on an open tradeskill window or whether a fishing pole is equipped:
   TradeskillSuggestions = GetTradeSkillLine()
   local tradeskill = LBIR[TradeskillSuggestions]
-  if (not ACHID_TRADESKILL[tradeskill] and IsEquippedItemType("Fishing Poles")) then
+  if (not ACHID_TRADESKILL[tradeskill] and IsEquippedItemType(select(17, GetAuctionItemSubClasses(1)))) then
     TradeskillSuggestions, tradeskill = LBI["Fishing"], "Fishing"
   end
   if (ACHID_TRADESKILL[tradeskill]) then
@@ -679,7 +682,6 @@ end
 
 RefreshBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
 RefreshBtn:SetWidth(75); RefreshBtn:SetHeight(21)
---RefreshBtn:SetPoint("TOPLEFT", sortdrop, "BOTTOMLEFT", 16, -14)
 RefreshBtn:SetText(L.SUGGESTIONS_REFRESH)
 RefreshBtn:SetScript("OnClick", Refresh)
 
@@ -871,7 +873,7 @@ do
       if (tab) then
         for k in pairs(tab) do
           if (strsub(k, 1, 1) == "*") then
-            for subz in gmatch(k, "%*([^%*]+)%*") do  list[ L.SUBZONES[subz] or subz ] = true;  end
+            for subz in gmatch(k, "[^%*]+") do  list[ L.SUBZONES[subz] or subz ] = true;  end
           else
             list[ L.SUBZONES[k] or k ] = true
           end
@@ -935,118 +937,3 @@ ResetBtn:SetScript("OnClick", function(self)
   EditZoneOverride:SetText("")
   Refresh()
 end)
-
-
-
--- MISCELLANEOUS
-----------------------------------------------------
-
---[[
-local function grabFromCategory(cat, ...)
-  wipe(suggested)
-  -- Get achievements in the category except those with a previous one in the chain that are also in the category:
-  local id, prev, p2
-  for i = 1, GetCategoryNumAchievements(cat) do
-    id = GetAchievementInfo(cat, i)
-    prev, p2 = nil, GetPreviousAchievement(id)
-    while (p2 and GetAchievementCategory(p2) == cat) do
-      prev = p2
-      p2 = GetPreviousAchievement(id)
-    end
-    suggested[ (prev or id) ] = true
-  end
-  -- Add achievements specified by function call (useful for meta-achievements in a different category):
-  for i=1, select("#", ...) do
-    id = select(i, ...)
-    suggested[id] = true
-  end
-  -- Fold achievements into their meta-achievements on the list:
-  local tab, _, critType, assetID = {}
-  for id in pairs(suggested) do
-    for i=1,GetAchievementNumCriteria(id) do
-      _, critType, _, _, _, _, _, assetID = GetAchievementCriteriaInfo(id, i)
-      if (critType == 8 and suggested[assetID]) then
-        tab[assetID] = true -- Not removed immediately in case there are meta-achievements within meta-achievements
-      end
-    end
-  end
-  for assetID in pairs(tab) do  suggested[assetID] = nil;  end
-  -- Format list:
-  local count = 0
-  wipe(tab)
-  for id in pairs(suggested) do
-    count = count + 1
-    tab[count] = id
-  end
-  return tab
-end
---]]
-
--- ULDUAR 10: Results from grabFromCategory(14961, 2957):
---	{ 2894, 2903, 2905, 2907, 2909, 2911, 2913, 2919, 2925, 2927, 2931, 2933, 2934, 2937, 2939, 2940, 2945, 2947, 2951, 2955, 2957, 2959, 2961, 2963, 2967, 2969, 2971, 2973, 2975, 2977, 2979, 2980, 2982, 2985, 2989, 2996, 3003, 3004, 3008, 3009, 3012, 3014, 3015, 3036, 3076, 3097, 3138, 3157, 3177, 3316 }
--- ULDUAR 25: Results from grabFromCategory(14962, 2958):
---	{ 2895, 2904, 2906, 2908, 2910, 2912, 2918, 2921, 2926, 2928, 2932, 2935, 2936, 2938, 2942, 2943, 2946, 2948, 2952, 2956, 2958, 2960, 2962, 2965, 2968, 2970, 2972, 2974, 2976, 2978, 2981, 2983, 2984, 2995, 2997, 3002, 3005, 3010, 3011, 3013, 3016, 3017, 3037, 3077, 3098, 3118, 3161, 3185, 3237 }
-
---[[
--- /run Overachiever.Debug_GetIDsInCat( GetAchievementCategory(GetTrackedAchievements()) )
-function Overachiever.Debug_GetIDsInCat(cat)
-  local tab = Overachiever_Settings.Debug_AchIDsInCat
-  if (not tab) then  Overachiever_Settings.Debug_AchIDsInCat = {};  tab = Overachiever_Settings.Debug_AchIDsInCat;  end
-  local catname = GetCategoryInfo(cat)
-  tab[catname] = {}
-  tab = tab[catname]
-  local id, n
-  for i=1,GetCategoryNumAchievements(cat) do
-    id, n = GetAchievementInfo(cat, i)
-    tab[n] = id
-  end
-end
---]]
-
---[[
--- /run Overachiever.Debug_GetMissingAch()
-local function getAchIDsFromTab(from, to)
-  for k,v in pairs(from) do
-    if (type(v) == "table") then
-      getAchIDsFromTab(v, to)
-    else
-      if (type(v) == "string") then
-        local id, crit = strsplit(":", v)
-        id, crit = tonumber(id) or id, tonumber(crit) or crit
-        to[id] = to[id] or {}
-        to[id][crit] = true
-      else
-        to[v] = to[v] or false
-      end
-    end
-  end
-end
-
-function Overachiever.Debug_GetMissingAch()
-  wipe(suggested)
-  getAchIDsFromTab(Overachiever.SUGGESTIONS, suggested)
-  getAchIDsFromTab(OVERACHIEVER_ACHID, suggested)
-  getAchIDsFromTab(OVERACHIEVER_EXPLOREZONEID, suggested)
-  local count = 0
-  for id, crit in pairs(suggested) do
-    if (type(id) ~= "number") then
-      print("Invalid ID type:",id,type(id))
-      count = count + 1
-    elseif (GetAchievementInfo(id)) then
-      if (crit) then
-        local num = GetAchievementNumCriteria(id)
-        for c in pairs(crit) do
-          if (c > num) then
-            print(GetAchievementLink(id),"is missing criteria #"..(tostring(c) or "<?>"))
-            count = count + 1
-          end
-        end
-      end
-    else
-      print("Missing ID:",id..(crit and " (with criteria)" or ""))
-      count = count + 1
-    end
-  end
-  print("Overachiever.Debug_GetMissingAch():",count,"problems found.")
-end
---]]

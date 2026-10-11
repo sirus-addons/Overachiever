@@ -7,8 +7,6 @@
 --  few variations on some basic item types (checkboxes, labels) and an extensible, modular system for supporting
 --  other items.
 --
---  See TjOptions.txt for documentation.
---
 
 local THIS_VERSION = 0.41
 
@@ -41,6 +39,9 @@ if (not TjOptions or TjOptions.Version < THIS_VERSION) then
   local ItemGlobalName = "TjOptionsItemNumber"  -- Used to give unique global names to items that don't specify one.
   local ScrollFrameGlobalName = "TjOptionsScrollFrame"
   local defaultSound = "igCharacterInfoTab";
+  local scrollRightInset, scrollBottomInset = 28, 5
+  local textRightInset = 8
+  local columnShift = { label = 2, dropdown = -1 }
 
   local errorlog
   local function panelerror(panel, text, multishow)
@@ -344,6 +345,60 @@ if (not TjOptions or TjOptions.Version < THIS_VERSION) then
 -- BUILD PANEL CONTENTS
 --------------------------
 
+  local function GetBaseType(itemType)
+    itemType = itemAlias[itemType] or itemType
+    local inherit = itemFuncs[itemType].inherit
+    while (inherit) do
+      itemType = itemAlias[inherit] or inherit
+      inherit = itemFuncs[itemType].inherit
+    end
+    return itemType
+  end
+
+  local UpdateLayout
+
+  local function UpdateLayoutDeferred(self)
+    self:SetScript("OnUpdate", nil)
+    UpdateLayout(self)
+  end
+
+  function UpdateLayout(panel)
+    local frame = panel.TjOpt_scrollframe or panel
+    local panelLeft, panelRight = panel:GetLeft(), panel:GetRight()
+    local left, right, top, bottom = frame:GetLeft(), frame:GetRight(), frame:GetTop(), frame:GetBottom()
+    if (not (panelLeft and panelRight and left and right and top and bottom)) then
+      panel:SetScript("OnUpdate", UpdateLayoutDeferred)
+      return;
+    end
+
+    if (panel.titleLabel and panel.TjOpt_tab.titleCenter) then
+      panel.titleLabel:SetWidth(max(panelRight - panelLeft - 32, 1))
+    end
+    if (panel.TjOpt_scrollchild) then
+      panel.TjOpt_scrollchild:SetWidth(max(right - left, 1))
+      panel.TjOpt_scrollchild:SetHeight(max(top - bottom, 1))
+    end
+
+    right = right - textRightInset
+    for i, obj in ipairs(panel.TjOpt_fit or {}) do
+      local check = obj:GetObjectType() == "CheckButton" and obj
+      local text = check and _G[check:GetName().."Text"] or obj
+      left = text:GetLeft()
+      if (left) then
+        local width = max(right - left, 1)
+        text:SetWidth(width)
+        if (check) then  check:SetHitRectInsets(0, -min(text:GetStringWidth() + 2, width), 0, 0);  end
+      else
+        panel:SetScript("OnUpdate", UpdateLayoutDeferred)
+      end
+    end
+    if (panel.TjOpt_scrollframe) then  panel.TjOpt_scrollframe:UpdateScrollChildRect();  end
+  end
+
+  local function ScrollFrameOnSizeChanged(self)
+    UpdateLayout(self:GetParent())
+  end
+
   local function BuildPanelContents(panel)
     panel.TjOpt_built = true;
     local tab = panel.TjOpt_tab
@@ -352,7 +407,6 @@ if (not TjOptions or TjOptions.Version < THIS_VERSION) then
       panel.titleLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -16);
       panel.titleLabel:SetText(tab.title);
       if (tab.titleCenter) then
-        panel.titleLabel:SetWidth(382)
         panel.titleLabel:SetJustifyH("CENTER")
       end
     end
@@ -362,12 +416,13 @@ if (not TjOptions or TjOptions.Version < THIS_VERSION) then
       local scrollname = type(tab.scrolling) == "string" and tab.scrolling or ScrollFrameGlobalName..(TjOptions.numScrollFrames + 1)
       local scrollframe = CreateFrame("ScrollFrame", scrollname, panel, "UIPanelScrollFrameTemplate")
       TjOptions.numScrollFrames = TjOptions.numScrollFrames + 1
-      scrollframe:SetWidth(382)
+      scrollframe.scrollBarHideable = 1
+      ScrollFrame_OnScrollRangeChanged(scrollframe)
+      scrollframe:SetScript("OnSizeChanged", ScrollFrameOnSizeChanged)
+      scrollframe:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -scrollRightInset, scrollBottomInset)
       if (panel.titleLabel) then
-        scrollframe:SetHeight(398 - panel.titleLabel:GetHeight())
         scrollframe:SetPoint("TOPLEFT", panel.titleLabel, "TOPLEFT", -16, -21)
       else
-        scrollframe:SetHeight(410)
         scrollframe:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -9)
       end
 
@@ -377,10 +432,11 @@ if (not TjOptions or TjOptions.Version < THIS_VERSION) then
       scrollbarBG:SetAllPoints()
 
       local scrollchild = CreateFrame("Frame", nil, scrollframe)
-      scrollchild:SetHeight(370)
-      scrollchild:SetWidth(370)
+      scrollchild:SetHeight(1)
+      scrollchild:SetWidth(1)
       scrollchild:SetPoint("TOPLEFT", scrollframe, "TOPLEFT")
       scrollframe:SetScrollChild(scrollchild)
+      panel.TjOpt_scrollframe = scrollframe
       panel.TjOpt_scrollchild = scrollchild
       scrollchild.TjOpt_isScrollChild = true
 
@@ -427,6 +483,7 @@ if (not TjOptions or TjOptions.Version < THIS_VERSION) then
           v.name = n
           obj.TjOpt_tab = v
           obj_offx, obj_offy, obj_buffer = obj_offx or 0, obj_offy or 0, obj_buffer or 0
+          obj_offx = obj_offx + (columnShift[GetBaseType(t)] or 0)
           if (handletip) then
             obj:SetScript("OnEnter", ItemOnEnter)
             obj:SetScript("OnLeave", ItemOnLeave)
@@ -455,6 +512,12 @@ if (not TjOptions or TjOptions.Version < THIS_VERSION) then
             panel.TjOpt_FocusList = list
             list[#list+1] = obj
             obj:SetScript("OnTabPressed", TjOptions.HandleTabbing)
+          end
+
+          if (v.fitWidth) then
+            local list = panel.TjOpt_fit or {}
+            panel.TjOpt_fit = list
+            list[#list+1] = _G[n]
           end
 
           if (column1ready) then
@@ -495,6 +558,8 @@ if (not TjOptions or TjOptions.Version < THIS_VERSION) then
       obj = nil;
     end
 
+    panel:SetScript("OnSizeChanged", UpdateLayout)
+
     local func = tab.OnBuild
     if (type(func) == "function") then
       func(panel)
@@ -522,6 +587,7 @@ if (not TjOptions or TjOptions.Version < THIS_VERSION) then
 
   local function funcOnShow(self)
     if (not self.TjOpt_built) then  BuildPanelContents(self);  end
+    UpdateLayout(self)
     self:LoadVariables()
     self.TjOpt_possiblechange = true
     local func = self.TjOpt_tab.OnShow
@@ -812,8 +878,10 @@ if (not TjOptions or TjOptions.Version < THIS_VERSION) then
     local label = _G[name.."Text"]
     if (label) then
       label:SetText(data.text)  -- nil is a valid value here.
+      label:SetJustifyH("LEFT")
       local w = data.width or label:GetWidth()
       frame:SetHitRectInsets(0, w * -1, 0, 0)
+      if (not data.width) then  data.fitWidth = true;  end
     else
       frame:SetHitRectInsets(0, (data.width or 0) * -1, 0, 0)
     end
@@ -831,7 +899,7 @@ if (not TjOptions or TjOptions.Version < THIS_VERSION) then
 
   local function CreateLabel_wrap(name, parent, data, font)
     data.justifyH = data.justifyH or "LEFT"
-    data.width = data.width or 370
+    if (not data.width) then  data.fitWidth = true;  end
   end
 
   -- Register built-in item types:

@@ -1,8 +1,17 @@
 local L = OVERACHIEVER_STRINGS
 
+local isAchievementInUI = Overachiever.IsAchievementInUI
 
--- Проверяем, что Overachiever и его функция IsAchievementInUI существуют
-local isAchievementInUI = Overachiever and Overachiever.IsAchievementInUI
+local InUICache = {}
+
+local function isCachedInUI(id)
+  local inUI = InUICache[id]
+  if (inUI == nil) then
+    inUI = isAchievementInUI(id) or false
+    if (AchievementFrame:IsShown()) then  InUICache[id] = inUI;  end
+  end
+  return inUI
+end
 
 local tabs, tabselected
 local LeftFrame
@@ -21,10 +30,10 @@ AchievementFrame_SetFilter = function(value, tabswitch)
     Overachiever_Tabs_Settings.AchFilters[frame:GetName()] = value
   end
   if (not Overachiever.NoAlterSetFilter and (tabswitch or tabselected)) then
-    local orig_SetValue = AchievementFrameAchievementsContainerScrollBar.SetValue
+    local own_SetValue = rawget(AchievementFrameAchievementsContainerScrollBar, "SetValue")
     AchievementFrameAchievementsContainerScrollBar.SetValue = emptyfunc
     orig_AchievementFrame_SetFilter(value)
-    AchievementFrameAchievementsContainerScrollBar.SetValue = orig_SetValue
+    AchievementFrameAchievementsContainerScrollBar.SetValue = own_SetValue
   else
     return orig_AchievementFrame_SetFilter(value)
   end
@@ -66,7 +75,7 @@ end
 local function isPreviousAchievementInUI(id)
   id = GetPreviousAchievement(id)
   if (id) then
-    if (isAchievementInUI and isAchievementInUI(id)) then  return true;  end
+    if (isCachedInUI(id)) then  return true;  end
     return isPreviousAchievementInUI(id)
   end
 end
@@ -88,6 +97,13 @@ local function displayAchievement(button, frame, achievement, index, selectionID
   button.element = true;
 
   if ( button.id ~= id ) then
+    local saturatedStyle = "normal";
+    if ( ACHIEVEMENT_FLAGS_ACCOUNT and bit.band(flags, ACHIEVEMENT_FLAGS_ACCOUNT) == ACHIEVEMENT_FLAGS_ACCOUNT ) then
+      button.accountWide = true;
+      saturatedStyle = "account";
+    else
+      button.accountWide = nil;
+    end
     button.id = id;
     button.label:SetWidth(ACHIEVEMENTBUTTON_LABELWIDTH);
     button.label:SetText(name)
@@ -107,7 +123,7 @@ local function displayAchievement(button, frame, achievement, index, selectionID
     button.hiddenDescription:SetText(description);
     button.numLines = ceil(button.hiddenDescription:GetHeight() / ACHIEVEMENTUI_FONTHEIGHT);
     button.icon.texture:SetTexture(icon);
-    if ( completed and not button.completed ) then
+    if ( completed and (not button.completed or button.saturatedStyle ~= saturatedStyle) ) then
       button.completed = true;
       button.dateCompleted:SetText(string.format(SHORTDATE, day, month, year));
       button.dateCompleted:Show();
@@ -119,16 +135,14 @@ local function displayAchievement(button, frame, achievement, index, selectionID
       button.dateCompleted:Hide();
       button:Desaturate();
       -- Overachiever color customization:
-      local RecentReminders = Overachiever and Overachiever.RecentReminders
+      local RecentReminders = Overachiever.RecentReminders
       -- Make sure Overachiever.RecentReminders_Check() was called before displayAchievement(...) for this:
-      if (RecentReminders and RecentReminders[id]) then
+      if (RecentReminders[id]) then
         local name = button:GetName()
-        --button:SetBackdropBorderColor(.8, .5, .5)
         _G[name .. "Background"]:SetTexture("Interface\\AddOns\\Overachiever_Tabs\\ParchmentDesaturateGreen")
         _G[name.."Glow"]:SetVertexColor(.13, .52, .17)
-      elseif (isAchievementInUI and not isAchievementInUI(id)) then
+      elseif (not isCachedInUI(id)) then
         local name = button:GetName()
-        --button:SetBackdropBorderColor(.8, .5, .5)
         if (isPreviousAchievementInUI(id)) then
           _G[name .. "Background"]:SetTexture("Interface\\AddOns\\Overachiever_Tabs\\ParchmentDesaturateBlue")
           _G[name.."Glow"]:SetVertexColor(.22, .17, .43)
@@ -163,6 +177,10 @@ local function displayAchievement(button, frame, achievement, index, selectionID
       button.tracked:SetChecked(false);
       button.tracked:Hide();
     end
+
+    if ( AchievementButton_UpdatePlusMinusTexture ) then
+      AchievementButton_UpdatePlusMinusTexture(button);
+    end
   end
 
   if ( id == selectionID ) then
@@ -176,7 +194,7 @@ local function displayAchievement(button, frame, achievement, index, selectionID
     else
       button:Expand(height);
     end
-    if ( not completed ) then
+    if ( not completed and isCachedInUI(id) ) then
       button.tracked:Show();
     end
   elseif ( button.selected ) then
@@ -194,39 +212,28 @@ end
 
 local sortList
 do
-  local getret
+  local primary
+  local keyName, keyNum, keyText, keyPts, keyDate = {}, {}, {}, {}, {}
 
   local function sortList_simple(a, b)
-    local aV = select(getret, GetAchievementInfo(a))
-    local bV = select(getret, GetAchievementInfo(b))
-    if (aV == nil) then
-      a, getret = tostringall(a, getret)
-      error("nil value found while sorting: ID="..a..", getret="..getret)
-    elseif (bV == nil) then
-      b, getret = tostringall(b, getret)
-      error("nil value found while sorting: ID="..b..", getret="..getret)
-    end
+    local aV, bV = primary[a], primary[b]
 
     -- If values are the same, fall back to alphabetical order by name:
     if (aV == bV) then
-      local aID, bID
-      aID, aV = GetAchievementInfo(a)
-      bID, bV = GetAchievementInfo(b)
+      aV, bV = keyName[a], keyName[b]
       -- If names are the same, fall back to ID:
       if (aV == bV) then
-        aV, bV = aID, bID
+        aV, bV = a, b
       end
     end
     if (type(aV) == "string") then
     -- Handle things so, e.g., "200 Daily Quests Complete" comes before "1000 Daily Quests Complete":
-      local numA, textA = aV:match("([^%s]+) (.+)")
-      numA = tonumber(numA)
+      local numA = keyNum[a]
       if (numA) then
-        local numB, textB = bV:match("([^%s]+) (.+)")
-        numB = tonumber(numB)
+        local numB = keyNum[b]
         if (numB) then
           if (numA ~= numB) then  return numA < numB;  end
-          return textA < textB
+          return keyText[a] < keyText[b]
         end
       end
     end
@@ -234,44 +241,53 @@ do
   end
 
   local function sortList_date(a, b)
-    local aM, aD, aY = select(5, GetAchievementInfo(a))
-    local bM, bD, bY = select(5, GetAchievementInfo(b))
-    if (aM and bM) then  -- Both achievements are completed
-      if (aY < bY) then
-        return true
-      elseif (aY > bY) then
-        return false
-      elseif (aM < bM) then
-        return true
-      elseif (aM > bM) then
-        return false
-      elseif (aD < bD) then
-        return true
-      elseif (aD > bD) then
-        return false
-      end
-    elseif (aM) then  -- A is complete; B is not
+    local aD, bD = keyDate[a], keyDate[b]
+    if (aD and bD) then  -- Both achievements are completed
+      if (aD ~= bD) then  return aD < bD;  end
+    elseif (aD) then  -- A is complete; B is not
       return true
-    elseif (bM) then  -- B is complete; A is not
+    elseif (bD) then  -- B is complete; A is not
       return false
     end
     -- If dates are the same or neither is complete, fall back to alphabetical order by name:
-    getret = 2
     return sortList_simple(a, b)
   end
 
   function sortList(list, mode)
     if (#list < 2) then
       return list
-    elseif (mode == 1) then  -- Date completed
-      sort(list, sortList_date)
-    elseif (mode == 2) then  -- Points
-      getret = 3;
-      sort(list, sortList_simple)
     elseif (mode == 3) then  -- ID
       sort(list)  -- ID already given in the table, so default sort can handle this.
+      return
+    end
+    local _, id, name, points, month, day, year, num
+    for i=1,#list do
+      id = list[i]
+      _, name, points, _, month, day, year = GetAchievementInfo(id)
+      if (name == nil) then
+        error("nil value found while sorting: ID="..tostring(id))
+      end
+      keyName[id] = name
+      if (name:find("^[%d%+%-%.]")) then
+        num, keyText[id] = name:match("([^%s]+) (.+)")
+        keyNum[id] = tonumber(num)
+      else
+        keyNum[id] = nil
+      end
+      if (mode == 1) then
+        keyDate[id] = month and (year * 10000 + month * 100 + day) or nil
+      elseif (mode == 2) then
+        keyPts[id] = points
+      end
+    end
+    if (mode == 1) then  -- Date completed
+      primary = keyName
+      sort(list, sortList_date)
+    elseif (mode == 2) then  -- Points
+      primary = keyPts
+      sort(list, sortList_simple)
     else  -- Name (mode 0, default)
-      getret = 2
+      primary = keyName
       sort(list, sortList_simple)
     end
   end
@@ -343,9 +359,7 @@ local function updateAchievementsList(frame)
 
   local extraHeight = scrollFrame.largeButtonHeight or ACHIEVEMENTBUTTON_COLLAPSEDHEIGHT
 
-  if Overachiever and Overachiever.RecentReminders_Check then
-    Overachiever.RecentReminders_Check()
-  end
+  Overachiever.RecentReminders_Check()
   local displayedHeight, index = 0;
   for i = 1, numButtons do
     index = i + offset
@@ -393,32 +407,19 @@ local function forceUpdate(frame, keepSelection, fromHook)
 end
 
 local function forceUpdate_all()
-  if tabs then
-    for k,tab in ipairs(tabs) do
-      forceUpdate(tab.frame, nil, true)
-    end
+  for k,tab in ipairs(tabs) do
+    forceUpdate(tab.frame, nil, true)
   end
 end
 
 local function tabUnselect()
   tabselected = nil
-  if tabs then
-    for k,tab in ipairs(tabs) do
-      tab.text:SetPoint("CENTER", tab, "CENTER", 0, -3)
-    end
+  for k,tab in ipairs(tabs) do
+    tab.text:SetPoint("CENTER", tab, "CENTER", 0, -3)
   end
 end
 
 local function tabOnClick(self, button)
-  self.text:SetPoint("CENTER", self, "CENTER", 0, -5)
-  local i, tab = 0
-  repeat
-    i = i + 1
-    tab = _G["AchievementFrameTab"..i]
-    if (tab and tab ~= self) then
-      tab.text:SetPoint("CENTER", tab, "CENTER", 0, -3)
-    end
-  until (not tab)
   -- Don't play sound when this is a silentDisplay or Overachiever.OpenTab_frame call.
   if (button) then  PlaySound("igCharacterInfoTab");  end
 
@@ -428,15 +429,21 @@ local function tabOnClick(self, button)
   end
 
   tabselected = self.frame
+  AchievementFrame.searchResults:Hide()
   AchievementFrame_ShowSubFrame(self.frame, LeftFrame)
   LeftFrame.label:SetText(self:GetText())
-  if AchievementFrameWaterMark then
-    AchievementFrameWaterMark:SetTexture(self.watermark)
-  end
+  AchievementFrameWaterMark:SetTexture(self.watermark)
   PanelTemplates_Tab_OnClick(self, AchievementFrame)
-  if self.frame then
-    updateAchievementsList(self.frame)
-  end
+  self.text:SetPoint("CENTER", self, "CENTER", 0, -5)
+  local i, tab = 0
+  repeat
+    i = i + 1
+    tab = _G["AchievementFrameTab"..i]
+    if (tab and tab ~= self) then
+      tab.text:SetPoint("CENTER", tab, "CENTER", 0, -3)
+    end
+  until (not tab)
+  updateAchievementsList(self.frame)
 end
 
 local function silentDisplay(button)
@@ -456,15 +463,11 @@ end
 
 local function achbtnOnClick(self, button)
   local id = self.id
-  if ( IsControlKeyDown() and (GetPreviousAchievement(id) or (isAchievementInUI and isAchievementInUI(id, true))) ) then
-    if Overachiever and Overachiever.UI_SelectAchievement then
-      Overachiever.UI_SelectAchievement(id, silentDisplay, self)
-    end
+  if ( IsControlKeyDown() and (GetPreviousAchievement(id) or isAchievementInUI(id, true)) ) then
+    Overachiever.UI_SelectAchievement(id, silentDisplay, self)
     return;
   elseif (Overachiever_WatchFrame and IsAltKeyDown()) then
-    if Overachiever_WatchFrame and Overachiever_WatchFrame.SetAchWatchList then
-      Overachiever_WatchFrame.SetAchWatchList(id, tabselected ~= Overachiever_WatchFrame)
-    end
+    Overachiever_WatchFrame.SetAchWatchList(id, tabselected ~= Overachiever_WatchFrame)
     return;
   end
   -- This section based on the AchievementButton_OnClick function in Blizzard_AchievementUI.lua:
@@ -474,7 +477,7 @@ local function achbtnOnClick(self, button)
       if ( achievementLink ) then
         ChatEdit_InsertLink(achievementLink);
       end
-    elseif ( IsModifiedClick("QUESTWATCHTOGGLE") ) then
+    elseif ( IsModifiedClick("QUESTWATCHTOGGLE") and (isCachedInUI(self.id) or IsTrackedAchievement(self.id)) ) then
       AchievementButton_ToggleTracking(self.id);
     end
     return;
@@ -492,9 +495,7 @@ local function achbtnOnClick(self, button)
   end
   clearSelection(frame)
   selectButton(self);
-  if Overachiever and Overachiever.RecentReminders_Check then
-    Overachiever.RecentReminders_Check()
-  end
+  Overachiever.RecentReminders_Check()
   displayAchievement(self, frame, self.id, self.index, self.id)
   HybridScrollFrame_ExpandButton(frame.scrollFrame, ((self.index - 1) * ACHIEVEMENTBUTTON_COLLAPSEDHEIGHT), self:GetHeight());
   updateAchievementsList(frame)
@@ -517,12 +518,11 @@ end
 
 local function ListFrame_OnShow(self)
   self.panel:Show()
-  if FilterByTab[self] then
-    AchievementFrame_SetFilter( FilterByTab[self] or ACHIEVEMENT_FILTER_ALL, true )
-  end
+  AchievementFrame_SetFilter( FilterByTab[self] or ACHIEVEMENT_FILTER_ALL, true )
 end
 
 local function ListFrame_OnHide(self)
+  wipe(InUICache)
   self.panel:Hide()
 end
 
@@ -597,10 +597,8 @@ function Overachiever.BuildNewTab(name, text, watermark, helptip, loadFunc, filt
     tabs = {}
     hooksecurefunc("AchievementFrameBaseTab_OnClick", tabUnselect)
     hooksecurefunc("AchievementFrameComparisonTab_OnClick", tabUnselect)
-    if AchievementFrameComparisonHeader then
-      orig_compheader_OnShow = AchievementFrameComparisonHeader:GetScript("OnShow")
-      AchievementFrameComparisonHeader:SetScript("OnShow", compheader_OnShow)
-    end
+    orig_compheader_OnShow = AchievementFrameComparisonHeader:GetScript("OnShow")
+    AchievementFrameComparisonHeader:SetScript("OnShow", compheader_OnShow)
     hooksecurefunc("AchievementButton_OnLoad", post_AchievementButton_OnLoad)
     hooksecurefunc("AchievementFrameAchievements_ForceUpdate", forceUpdate_all)
   end
@@ -609,16 +607,12 @@ function Overachiever.BuildNewTab(name, text, watermark, helptip, loadFunc, filt
   frame.ForceUpdate = forceUpdate
 
   scrollframe.update = function() updateAchievementsList(frame) end;  -- Needed in this fashion for HybridScrollFrame_SetOffset calls.
-  if _G[name.."ContainerScrollBarBG"] then
-    _G[name.."ContainerScrollBarBG"]:Show()
-  end
+  _G[name.."ContainerScrollBarBG"]:Show()
   frame.buttons = {}
   redir_btn_tinsert = frame.buttons
   HybridScrollFrame_CreateButtons(scrollframe, "AchievementTemplate", 0, -2);
   redir_btn_tinsert = nil
-  if Overachiever and Overachiever.UI_HookAchButtons then
-    Overachiever.UI_HookAchButtons(frame.buttons, scrollbar)
-  end
+  Overachiever.UI_HookAchButtons(frame.buttons, scrollbar)
 
   local panel = CreateFrame("Frame", nil, LeftFrame)
   panel:SetPoint("TOPLEFT", LeftFrame.label, "BOTTOMLEFT", 0, -6)
@@ -644,63 +638,49 @@ end
 
 local function HelpIcon_OnEnter(self)
   self.tex:SetTexture("Interface\\AddOns\\Overachiever_Tabs\\HelpIconHighlight")
-  if GameTooltip then
-    GameTooltip:SetOwner(self, "ANCHOR_NONE")
-    GameTooltip:SetPoint("TOPLEFT", self, "TOPRIGHT", 10, 0)
-    GameTooltip:SetBackdropColor(TOOLTIP_DEFAULT_BACKGROUND_COLOR.r, TOOLTIP_DEFAULT_BACKGROUND_COLOR.g, TOOLTIP_DEFAULT_BACKGROUND_COLOR.b)
-    if self.tip and tabselected and tabselected.tab then
-      GameTooltip:AddLine(self.tip:format(tabselected.tab:GetText()), 1, 1, 1)
-    end
-    --GameTooltip:AddLine(" ")
-    if tabselected and tabselected.helptip then
-      GameTooltip:AddLine(tabselected.helptip, nil, nil, nil, 1)
-    end
-    GameTooltip:AddLine(" ")
-    GameTooltip:AddLine(L.TAB_HELP, nil, nil, nil, 1)
-    GameTooltip:Show()
+  GameTooltip:SetOwner(self, "ANCHOR_NONE")
+  GameTooltip:SetPoint("TOPLEFT", self, "TOPRIGHT", 10, 0)
+  GameTooltip:SetBackdropColor(TOOLTIP_DEFAULT_BACKGROUND_COLOR.r, TOOLTIP_DEFAULT_BACKGROUND_COLOR.g, TOOLTIP_DEFAULT_BACKGROUND_COLOR.b)
+  if self.tip and tabselected and tabselected.tab then
+    GameTooltip:AddLine(self.tip:format(tabselected.tab:GetText()), 1, 1, 1)
   end
+  if tabselected and tabselected.helptip then
+    GameTooltip:AddLine(tabselected.helptip, nil, nil, nil, 1)
+  end
+  GameTooltip:AddLine(" ")
+  GameTooltip:AddLine(L.TAB_HELP, nil, nil, nil, 1)
+  GameTooltip:Show()
 end
 
 local function HelpIcon_OnLeave(self)
   self.tex:SetTexture("Interface\\AddOns\\Overachiever_Tabs\\HelpIcon")
-  if GameTooltip then
-    GameTooltip:Hide()
-  end
+  GameTooltip:Hide()
 end
 
 local function LeftFrame_OnShow(self)
-  if AchievementFrameCategoriesContainer then
-    AchievementFrameCategoriesContainer:Hide()
-    AchievementFrameCategoriesContainerScrollBar:Hide()
-  end
-  if AchievementFrameFilterDropDown then
-    AchievementFrameFilterDropDown:Show()
-  end
+  AchievementFrameCategoriesContainer:Hide()
+  AchievementFrameCategoriesContainerScrollBar:Hide()
+  AchievementFrameFilterDropDown:Show()
   if AchievementFrameHeaderRightDDLInset then
     AchievementFrameHeaderRightDDLInset:Show()
   end
 end
 
 local function LeftFrame_OnHide(self)
-  if AchievementFrameCategoriesContainer then
-    AchievementFrameCategoriesContainer:Show()
-  end
+  AchievementFrameCategoriesContainer:Show()
   if (not AchievementFrameAchievements:IsShown()) then
-    if AchievementFrameFilterDropDown then
-      AchievementFrameFilterDropDown:Hide()
-    end
+    AchievementFrameFilterDropDown:Hide()
     if AchievementFrameHeaderRightDDLInset then
       AchievementFrameHeaderRightDDLInset:Hide()
     end
   end
-  if (not (Overachiever and Overachiever.NoAlterSetFilter)) then
-    if FilterByTab[AchievementFrameAchievements] then
-      AchievementFrame_SetFilter( FilterByTab[AchievementFrameAchievements] or ACHIEVEMENT_FILTER_ALL, true )
-    end
+  if (not Overachiever.NoAlterSetFilter) then
+    AchievementFrame_SetFilter( FilterByTab[AchievementFrameAchievements] or ACHIEVEMENT_FILTER_ALL, true )
   end
 end
 
 local function LeftFrame_OnEvent_CRITERIA_UPDATE()
+  if (not AchievementFrame:IsVisible()) then  return;  end
   if tabs then
     for k,tab in ipairs(tabs) do
       local frame = tab.frame
@@ -781,35 +761,20 @@ do
   end)
 end
 
--- Meta-criteria creation intercept (in addition to the base Overachiever intercept):
 local function MetaCriteriaOnClick(self)
   local id = self.id
-  if (id and (GetPreviousAchievement(id) or (isAchievementInUI and isAchievementInUI(id, true))) ) then
-    if Overachiever and Overachiever.UI_SelectAchievement then
-      Overachiever.UI_SelectAchievement(id, silentDisplay, self:GetParent():GetParent())
-    end
+  if (id and (GetPreviousAchievement(id) or isAchievementInUI(id, true)) ) then
+    Overachiever.UI_SelectAchievement(id, silentDisplay, self:GetParent():GetParent())
   end
-end
-
-local orig_AchievementButton_GetMeta = AchievementButton_GetMeta
-local function new_AchievementButton_GetMeta(...)
-  local frame = orig_AchievementButton_GetMeta(...)
-  if frame then
-    frame:SetScript("OnClick", MetaCriteriaOnClick)
-  end
-  return frame;
-end
-
-if AchievementButton_GetMeta then
-  AchievementButton_GetMeta = new_AchievementButton_GetMeta
 end
 
 -- Meta-criteria recolor:
 local function recolor_AchievementObjectives_DisplayCriteria(objectivesFrame, id)
-  if (not id or GetPreviousAchievement(id) or (isAchievementInUI and isAchievementInUI(id, true))) then  return;  end
+  local recolor = id and not GetPreviousAchievement(id) and not isAchievementInUI(id, true)
   local metaCriteria, index = AchievementFrameMeta1, 1
   while (metaCriteria and metaCriteria:IsShown()) do
-    if (not GetPreviousAchievement(metaCriteria.id) and (isAchievementInUI and not isAchievementInUI(metaCriteria.id, true))) then
+    if (metaCriteria:GetScript("OnClick") ~= MetaCriteriaOnClick) then  metaCriteria:SetScript("OnClick", MetaCriteriaOnClick);  end
+    if (recolor and not GetPreviousAchievement(metaCriteria.id) and not isAchievementInUI(metaCriteria.id, true)) then
       metaCriteria.label:SetTextColor(.9, .4, .4, 1)
     end
     index = index + 1
@@ -817,9 +782,7 @@ local function recolor_AchievementObjectives_DisplayCriteria(objectivesFrame, id
   end
 end
 
-if AchievementObjectives_DisplayCriteria then
-  hooksecurefunc("AchievementObjectives_DisplayCriteria", recolor_AchievementObjectives_DisplayCriteria)
-end
+hooksecurefunc("AchievementObjectives_DisplayCriteria", recolor_AchievementObjectives_DisplayCriteria)
 
 
 -- Flashing tab:

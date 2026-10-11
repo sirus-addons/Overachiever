@@ -6,27 +6,26 @@ local AchievementIcon = "Interface\\AddOns\\Overachiever\\AchShield"
 local tooltip_complete = { r = 0.2, g = 0.5, b = 0.2 }
 local tooltip_incomplete = { r = 1, g = 0.1, b = 0.1 }
 
+local CriteriaIndex = {}
+
 local function isCriteria(achID, name)
-  local n, t, complete
-  for i=1,GetAchievementNumCriteria(achID) do
-    n, t, complete = GetAchievementCriteriaInfo(achID, i)
-    if (n == name) then  return true, complete;  end
+  local index = CriteriaIndex[achID]
+  if (not index) then
+    index = {}
+    for i=1,GetAchievementNumCriteria(achID) do
+      local n = GetAchievementCriteriaInfo(achID, i)
+      if (n and not index[n]) then  index[n] = i;  end
+    end
+    CriteriaIndex[achID] = index
+  end
+  local i = index[name]
+  if (i) then
+    local _, _, complete = GetAchievementCriteriaInfo(achID, i)
+    return true, complete
   end
 end
 
 Overachiever.IsCriteria = isCriteria
-
---[[
-local function isCriteria_hidden(achID, name)
-  local n, t, complete
-  local i = 0
-  repeat
-    i = i + 1
-    n, t, complete = GetAchievementCriteriaInfo(achID, i)
-    if (n == name) then  return true, complete;  end
-  until (not n)
-end
---]]
 
 local lastreminder = 0
 local SharedMedia = LibStub:GetLibrary("LibSharedMedia-3.0")
@@ -178,6 +177,7 @@ function Overachiever.ExamineSetUnit(tooltip)
 
   elseif (name) then
     if (UnitCreatureType(unit) == L.CRITTER) then
+      local added = {}
       for key,tab in pairs(CritterAch) do
         if (Overachiever_Settings[ tab[1] ]) then
           id, text, complete = CritterCheck(key, name)
@@ -190,9 +190,12 @@ function Overachiever.ExamineSetUnit(tooltip)
               PlayReminder()
               RecentReminders[id] = time()
             end
-            tooltip:AddLine(text, r, g, b)
-            tooltip:AddTexture(AchievementIcon)
-            needtipshow = true
+            if (not added[text]) then
+              added[text] = true
+              tooltip:AddLine(text, r, g, b)
+              tooltip:AddTexture(AchievementIcon)
+              needtipshow = true
+            end
           end
         end
       end
@@ -200,7 +203,7 @@ function Overachiever.ExamineSetUnit(tooltip)
     elseif (Overachiever_Settings.CreatureTip_killed and UnitCanAttack("player", unit)) then
       local guid = UnitGUID(unit)
       guid = tonumber( "0x"..strsub(guid, 8, 12) )
-      local tab = Overachiever.AchLookup_kill[guid]
+      local tab = Overachiever.AchLookup_kill and Overachiever.AchLookup_kill[guid]
       if (tab) then
         local num, numincomplete, potential, _, achcom, c, t = 0, 0
         for i = 1, #tab, 2 do
@@ -212,7 +215,7 @@ function Overachiever.ExamineSetUnit(tooltip)
             if (not c) then
               numincomplete = numincomplete + 1
               potential = potential or {}
-              potential[id] = i+1
+              potential[id] = tab[i+1]
             end
           end
         end
@@ -235,6 +238,7 @@ function Overachiever.ExamineSetUnit(tooltip)
             end
           end
 
+          local r, g, b
           if (numincomplete <= 0) then
             text = L.KILL_COMPLETE
             r, g, b = tooltip_complete.r, tooltip_complete.g, tooltip_complete.b
@@ -301,7 +305,7 @@ function Overachiever.ExamineOneLiner(tooltip)
         r, g, b = tooltip_incomplete.r, tooltip_incomplete.g, tooltip_incomplete.b
         RecentReminders[id] = time()
         if (not angler or not Overachiever_Settings.SoundAchIncomplete_AnglerCheckPole or
-            not IsEquippedItemType("Fishing Poles")) then
+            not IsEquippedItemType(select(17, GetAuctionItemSubClasses(1)))) then
           PlayReminder()
         end
       end
@@ -319,50 +323,48 @@ end
 local FoodCriteria, DrinkCriteria = {}, {}
 local numDrinksConsumed, numFoodConsumed
 
---local lastitemTime, lastitemLink = 0
+local function GetStatNum(id)
+  return tonumber(GetStatistic(id)) or 0
+end
 
 function Overachiever.BuildItemLookupTab()
-  numDrinksConsumed = GetStatistic(OVERACHIEVER_ACHID.Stat_ConsumeDrinks)
-  numFoodConsumed = GetStatistic(OVERACHIEVER_ACHID.Stat_ConsumeFood)
+  numDrinksConsumed = GetStatNum(OVERACHIEVER_ACHID.Stat_ConsumeDrinks)
+  Overachiever.YieldIfBusy()
+  numFoodConsumed = GetStatNum(OVERACHIEVER_ACHID.Stat_ConsumeFood)
+  Overachiever.YieldIfBusy()
 
 -- Build lookup tables (since examining the criteria each time is time-consuming)
   local foodID, drinkID = OVERACHIEVER_ACHID.TastesLikeChicken, OVERACHIEVER_ACHID.HappyHour
-  
---[[  -- Tables are always built now because Blizzard's API doesn't track what is consumed. To be reliable,
-      -- Overachiever needs to "see" what is consumed so from now on we'll always use the tracking table.
-      -- (Variable ItemLookupTabBuilt is no longer used.)
-  if ( ItemLookupTabBuilt or not Overachiever_Settings.Item_consumed or
-       (not Overachiever_Settings.Item_consumed_whencomplete and select(4, GetAchievementInfo(foodID)) and
-       select(4, GetAchievementInfo(drinkID))) ) then
-  -- OLD: If the tables are built, or we don't add this info to tooltips, or we don't add this info to tooltips if
-  -- the achievement is complete AND both achievements are complete, then do nothing.
-    return;
-  end
---]]
 
   Overachiever_CharVars_Consumed = Overachiever_CharVars_Consumed or {}
   Overachiever_CharVars_Consumed.Food = Overachiever_CharVars_Consumed.Food or {}
   Overachiever_CharVars_Consumed.Drink = Overachiever_CharVars_Consumed.Drink or {}
   local ConsumedFood, ConsumedDrink = Overachiever_CharVars_Consumed.Food, Overachiever_CharVars_Consumed.Drink
 
+  local food, drink = {}, {}
   local i, _, asset = 1
   _, _, _, _, _, _, _, asset = GetAchievementCriteriaInfo(foodID, i)
+  Overachiever.YieldIfBusy()
   while (asset) do -- while loop used because these are "hidden" criteria: GetAchievementNumCriteria returns only 1.
-    FoodCriteria[asset] = ConsumedFood[asset] or 0
+    food[asset] = ConsumedFood[asset] or 0
     i = i + 1
     _, _, _, _, _, _, _, asset = GetAchievementCriteriaInfo(foodID, i)
+    Overachiever.YieldIfBusy()
   end
 
   i = 1
   _, _, _, _, _, _, _, asset = GetAchievementCriteriaInfo(drinkID, i)
+  Overachiever.YieldIfBusy()
   while (asset) do
-    DrinkCriteria[asset] = ConsumedDrink[asset] or 0
+    drink[asset] = ConsumedDrink[asset] or 0
     i = i + 1
     _, _, _, _, _, _, _, asset = GetAchievementCriteriaInfo(drinkID, i)
+    Overachiever.YieldIfBusy()
   end
-end
 
-local LBI = LibStub:GetLibrary("LibBabble-Inventory-3.0"):GetLookupTable()
+  for k,v in pairs(food) do  FoodCriteria[k] = v;  end
+  for k,v in pairs(drink) do  DrinkCriteria[k] = v;  end
+end
 
 local ConsumeItemAch = {
   TastesLikeChicken = { "Item_consumed", L.ACH_CONSUME_COMPLETE, L.ACH_CONSUME_INCOMPLETE, L.ACH_CONSUME_INCOMPLETE_EXTRA, FoodCriteria },
@@ -384,81 +386,64 @@ local function ItemConsumedCheck(ach, itemID)
 end
 
 function Overachiever.ExamineItem(tooltip)
-  tooltip = tooltip or this or GameTooltip  -- Workaround in case another addon breaks this
+  tooltip = tooltip or GameTooltip  -- Workaround in case another addon breaks this
   local name, link = tooltip:GetItem()
   if (not link) then  return;  end
   
-  -- Получаем полную информацию о предмете
-  local itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount,
-        itemEquipLoc, itemTexture, itemSellPrice = GetItemInfo(link)
-  
-  -- Если информация о предмете не загружена, выходим
-  if not itemName then
-    -- Попробуем загрузить информацию в кэш для будущего использования
-    GameTooltip:SetHyperlink(link)
-    return
+  local _, _, itemID  = strfind(link, "item:(%d+)")
+  itemID = tonumber(itemID)
+  local id, text, complete, achcomplete
+  for key,tab in pairs(ConsumeItemAch) do
+    if (Overachiever_Settings[ tab[1] ]) then
+      id, text, complete, achcomplete = ItemConsumedCheck(key, itemID)
+      if (text) then  break;  end
+    end
   end
-  
-  -- Проверяем, что itemType и itemSubType не nil перед сравнением
-  if not itemType or not itemSubType then
-    return
-  end
-  
-  -- Проверяем тип предмета
-  if ((itemType == LBI["Consumable"] and (itemSubType == LBI["Food & Drink"] or itemSubType == LBI["Consumable"])) or
-      (itemType == LBI["Trade Goods"] and itemSubType == LBI["Meat"])) then
-    local _, _, itemID  = strfind(link, "item:(%d+)")
-    itemID = tonumber(itemID)
-    local id, text, complete, achcomplete
-    for key,tab in pairs(ConsumeItemAch) do
-      if (Overachiever_Settings[ tab[1] ]) then
-        id, text, complete, achcomplete = ItemConsumedCheck(key, itemID)
-        if (text) then  break;  end
+  if (text) then
+    local r, g, b
+    if (complete) then
+      r, g, b = tooltip_complete.r, tooltip_complete.g, tooltip_complete.b
+    else
+      r, g, b = tooltip_incomplete.r, tooltip_incomplete.g, tooltip_incomplete.b
+      local itemMinLevel = select(5, GetItemInfo(link))
+      if (not achcomplete and tooltip == GameTooltip and itemMinLevel and itemMinLevel <= UnitLevel("player")) then
+        -- Extra checks needed since the previous item sometimes shows up on the tooltip?
+        PlayReminder()
+        RecentReminders[id] = time()
       end
     end
-    if (text) then
-      local r, g, b
-      if (complete) then
-        r, g, b = tooltip_complete.r, tooltip_complete.g, tooltip_complete.b
-      else
-        r, g, b = tooltip_incomplete.r, tooltip_incomplete.g, tooltip_incomplete.b
-        if (not achcomplete and tooltip == GameTooltip and itemMinLevel and itemMinLevel <= UnitLevel("player")) then
-          -- Extra checks needed since the previous item sometimes shows up on the tooltip?
-          PlayReminder()
-          RecentReminders[id] = time()
-        end
-      end
-      tooltip:AddLine(text, r, g, b)
-      tooltip:AddTexture(AchievementIcon)
-      tooltip:Show()
-    end
+    tooltip:AddLine(text, r, g, b)
+    tooltip:AddTexture(AchievementIcon)
+    tooltip:Show()
   end
 end
 
 local function BagUpdate(...)
-  local oldF, oldD = numFoodConsumed, numDrinksConsumed
-  numFoodConsumed = GetStatistic(OVERACHIEVER_ACHID.Stat_ConsumeFood)
-  numDrinksConsumed = GetStatistic(OVERACHIEVER_ACHID.Stat_ConsumeDrinks)
+  local itemID, old, new, lost
+  for i=1,select("#", ...),3 do
+    itemID, old, new = select(i, ...)
+    if (old > new) then  lost = true;  break;  end
+  end
+  if (not lost) then  return;  end
 
-  local changeF, changeD = oldF < numFoodConsumed, oldD < numDrinksConsumed
+  local oldF, oldD = numFoodConsumed, numDrinksConsumed
+  numFoodConsumed = GetStatNum(OVERACHIEVER_ACHID.Stat_ConsumeFood)
+  numDrinksConsumed = GetStatNum(OVERACHIEVER_ACHID.Stat_ConsumeDrinks)
+
+  local changeF, changeD = oldF and oldF < numFoodConsumed, oldD and oldD < numDrinksConsumed
   if (changeF or changeD) then
-    local itemID, old, new
     for i=1,select("#", ...),3 do
       itemID, old, new = select(i, ...)
-      --if (old > new) then
-      if (changeF and FoodCriteria[itemID]) then
-        --local _, link = GetItemInfo(itemID)
-        --print("You ate:",link)
-        FoodCriteria[itemID] = true
-        Overachiever_CharVars_Consumed.Food[itemID] = true
+      if (old > new) then
+        if (changeF and FoodCriteria[itemID]) then
+          FoodCriteria[itemID] = true
+          Overachiever_CharVars_Consumed.Food[itemID] = true
+        end
+        if (changeD and DrinkCriteria[itemID]) then
+          DrinkCriteria[itemID] = true
+          Overachiever_CharVars_Consumed.Drink[itemID] = true
+        end
       end
-      if (changeD and DrinkCriteria[itemID]) then
-        --local _, link = GetItemInfo(itemID)
-        --print("You drank:",link)
-        DrinkCriteria[itemID] = true
-        Overachiever_CharVars_Consumed.Drink[itemID] = true
-      end
-      --end
     end
   end
 end

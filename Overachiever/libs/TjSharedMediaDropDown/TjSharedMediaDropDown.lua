@@ -54,7 +54,7 @@ if (not TjSharedMediaDropDown or TjSharedMediaDropDown.Version < THIS_VERSION) t
       local blizztab
       for i,mt in ipairs(mediaList) do
         if (mt == "None" or mt == NONE) then
-          tinsert(menuList, 1, { text = mt, value = 0 })
+          tinsert(menuList, 1, { text = NONE, value = 0 })
         elseif (strsub(mt, 1, 10) == "Blizzard: ") then
           if (not blizztab) then
             blizztab = {}

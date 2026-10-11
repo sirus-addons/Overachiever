@@ -165,7 +165,7 @@ if (not TjDropDownMenu or TjDropDownMenu.Version < THIS_VERSION) then
   end
 
   TjDropDownMenu.NumCreated = TjDropDownMenu.NumCreated or 0
-  local hooksComplete, TjMenuOpen, prevTjMenuOpen, clickedButton;
+  local hooksComplete, TjMenuOpen, prevTjMenuOpen;
 
   local function SelectEntry(dropdown, tab, fromClick)
     tab.checked = 1
@@ -185,7 +185,7 @@ if (not TjDropDownMenu or TjDropDownMenu.Version < THIS_VERSION) then
 -- AUTOMATIC FUNCTION SETUP FOR MENU ITEMS
 ----------------------------------------------
 
-  local function RefreshMenu(frame, useValue, dropdownLevel)
+  local function RefreshMenu(frame, useValue, dropdownLevel, clickedButton)
     assert(frame, "RefreshMenu: frame not found")
   -- Largely taken from UIDropDownMenu_Refresh in UIDropDownMenu.lua, which didn't do things quite right for us.
   -- Comments in this function taken from there as well, except those starting with "TjDDM."
@@ -244,7 +244,7 @@ if (not TjDropDownMenu or TjDropDownMenu.Version < THIS_VERSION) then
 
     -- TjDDM: Added the following to recursively refresh lower levels.
     if (dropdownLevel > 1) then
-      RefreshMenu(frame, useValue, dropdownLevel - 1);
+      RefreshMenu(frame, useValue, dropdownLevel - 1, clickedButton);
     end
   end
 
@@ -271,7 +271,7 @@ if (not TjDropDownMenu or TjDropDownMenu.Version < THIS_VERSION) then
     if (tab.TjDDM_notCheckable) then
       checked = nil;
       tab.checked = nil;
-      _G[clickedButton:GetName().."Check"]:Hide();
+      _G[self:GetName().."Check"]:Hide();
     elseif (not checked or tab.keepShownOnClick) then
     -- Overrides default keepShownOnClick functionality, which toggles between checked and unchecked.
       ClearChecks(dropdown.TjDDM.menuList, true)
@@ -292,7 +292,7 @@ if (not TjDropDownMenu or TjDropDownMenu.Version < THIS_VERSION) then
       else
         menuFrame = menuFrameList[dropdown.TjDDM.menuFrameType];
       end
-      RefreshMenu(menuFrame)
+      RefreshMenu(menuFrame, nil, nil, self)
     end
 
     local prevfunc = tab.TjDDM.prevfunc
@@ -383,16 +383,6 @@ if (not TjDropDownMenu or TjDropDownMenu.Version < THIS_VERSION) then
   local function MenuHidden()
     prevTjMenuOpen = TjMenuOpen;
     TjMenuOpen = nil;
-  end
-
-  local orig_UIDropDownMenuButton_OnClick;
-  local function hooked_UIDropDownMenuButton_OnClick(self, ...)
-    if (TjMenuOpen) then
-      clickedButton = self;
-    else
-      clickedButton = nil;
-    end
-    orig_UIDropDownMenuButton_OnClick(self, ...)
   end
 
   local function isSetupComplete(menuList)
@@ -584,8 +574,6 @@ if (not TjDropDownMenu or TjDropDownMenu.Version < THIS_VERSION) then
 
       if (not hooksComplete) then
         DropDownList1:HookScript("OnHide", MenuHidden);
-        orig_UIDropDownMenuButton_OnClick = UIDropDownMenuButton_OnClick;
-        UIDropDownMenuButton_OnClick = hooked_UIDropDownMenuButton_OnClick;
         hooksComplete = true
       end
 

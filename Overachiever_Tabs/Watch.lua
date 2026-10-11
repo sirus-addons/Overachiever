@@ -150,7 +150,6 @@ function frame.SetAchWatchList(id, add)
         CopyDestAchAnim:SetModel("Interface\\ItemAnimations\\ForcedBackpackItem.mdx")
         CopyDestAchAnim:SetScript("OnAnimFinished", function(self)  self:Hide();  end);
         CopyDestAchAnim:SetPoint("BOTTOMRIGHT", destlistdrop, 5, -14)
-        --CopyDestAchAnim:SetWidth(30);  CopyDestAchAnim:SetHeight(30);
       end
       local texture = select(10, GetAchievementInfo(id))
       if (texture) then
@@ -176,14 +175,9 @@ function frame.SetAchWatchList(id, add)
   end
 end
 
-local orig_AchievementButton_OnClick = AchievementButton_OnClick
-AchievementButton_OnClick = function(self, ignoreModifiers, ...)
-  if (not ignoreModifiers and IsAltKeyDown()) then
-    frame.SetAchWatchList(self.id, true)
-    return;
-  end
-  return orig_AchievementButton_OnClick(self, ignoreModifiers, ...)
-end
+hooksecurefunc("AchievementButton_OnClick", function(self, ignoreModifiers)
+  if (not ignoreModifiers and IsAltKeyDown()) then  frame.SetAchWatchList(self.id, true);  end
+end)
 
 
 
@@ -350,7 +344,7 @@ listdrop:SetDropDownWidth(158)
 listdrop.tooltip = 0
 
 NewListBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-NewListBtn:SetWidth(43); NewListBtn:SetHeight(21)
+NewListBtn:SetWidth(52); NewListBtn:SetHeight(21)
 NewListBtn:SetPoint("TOPLEFT", listdrop, "BOTTOMLEFT", 16, -3)
 NewListBtn:SetText(L.WATCH_NEW)
 NewListBtn:SetScript("OnClick", function()
@@ -358,7 +352,7 @@ NewListBtn:SetScript("OnClick", function()
 end);
 
 DeleteListBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-DeleteListBtn:SetWidth(51); DeleteListBtn:SetHeight(21)
+DeleteListBtn:SetWidth(72); DeleteListBtn:SetHeight(21)
 DeleteListBtn:SetPoint("LEFT", NewListBtn, "RIGHT", 4, 0)
 DeleteListBtn:SetText(L.WATCH_DELETE)
 DeleteListBtn:SetScript("OnClick", function()
@@ -368,7 +362,6 @@ end);
 deflistdrop_menu = {  {  text = L.WATCH_LIST_GLOBAL, value = 0, tooltipTitle = L.WATCH_LIST_GLOBAL  },  {  text = L.WATCH_LIST_PERCHAR, value = 1, tooltipTitle = THIS_PC  };  }
 deflistdrop = TjDropDownMenu.CreateDropDown("Overachiever_WatchFrameDefListDrop", panel, deflistdrop_menu)
 deflistdrop:SetLabel(L.WATCH_DEFAULTLIST, true)
---deflistdrop:SetPoint("TOPLEFT", listdrop, "BOTTOMLEFT", 0, -18)
 deflistdrop:SetPoint("TOPLEFT", NewListBtn, "BOTTOMLEFT", -16, -22)
 deflistdrop:SetDropDownWidth(158)
 deflistdrop.tooltip = L.WATCH_DEFAULTLIST_TIP
@@ -455,7 +448,6 @@ hooksecurefunc("GameTooltip_AddNewbieTip", function(self, text, ...)
   local numCompletedText = numAchievements > 0 and numCompleted.."/"..numAchievements or L.WATCH_EMPTY_SHORT
 
   -- Based on AchievementFrameCategory_StatusBarTooltip():
-  --GameTooltip_SetDefaultAnchor(GameTooltip, self);
   GameTooltip:SetOwner(self, "ANCHOR_NONE")
   GameTooltip:SetPoint("TOPLEFT", self, "TOPRIGHT", 10, 9)
   GameTooltip:SetMinimumWidth(128, 1);
@@ -479,18 +471,3 @@ frame:SetScript("OnEvent", function()  -- React to "PLAYER_LOGOUT" event:
     if (cnum == 0) then  VARS.WatchLists_Realms[realm] = nil;  end
   end
 end);
-
-
---[[
--- /run Overachiever.Debug_DumpWatch()
-function Overachiever.Debug_DumpWatch()
-  local tab = {}
-  for id in pairs(CurrentWatchList) do
-    tab[#tab+1] = id
-  end
-  sort(tab)
-  local s = "{ "..strjoin(", ", unpack(tab)).." }"
-  print(s)
-  error(s)
-end
---]]

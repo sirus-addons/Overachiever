@@ -5,8 +5,6 @@
 --
 
 
--- Overachiever_Debug = true
-
 local THIS_VERSION = GetAddOnMetadata("Overachiever", "Version")
 local THIS_TITLE = GetAddOnMetadata("Overachiever", "Title")
 
@@ -19,6 +17,42 @@ local L = OVERACHIEVER_STRINGS
 local CATEGORIES_ALL, CATEGORY_EXPLOREROOT, CATEGORIES_EXPLOREZONES
 local OptionsPanel
 local MadeDraggable_AchFrame, MadeDragSave_AchFrame
+
+do
+  local BUDGET = 4
+  local queue, frame, sliceStart = {}
+
+  local function OnUpdate(self)
+    sliceStart = debugprofilestop()
+    while (queue[1]) do
+      local co = queue[1]
+      local ok, err = coroutine.resume(co)
+      if (not ok) then
+        tremove(queue, 1)
+        geterrorhandler()(err)
+      elseif (coroutine.status(co) == "dead") then
+        tremove(queue, 1)
+      end
+      if (debugprofilestop() - sliceStart >= BUDGET) then  return;  end
+    end
+    self:Hide()
+  end
+
+  function Overachiever.RunInBackground(func)
+    if (not frame) then
+      frame = CreateFrame("Frame")
+      frame:SetScript("OnUpdate", OnUpdate)
+    end
+    queue[#queue+1] = coroutine.create(func)
+    frame:Show()
+  end
+
+  function Overachiever.YieldIfBusy()
+    if (sliceStart and coroutine.running() and debugprofilestop() - sliceStart >= BUDGET) then
+      coroutine.yield()
+    end
+  end
+end
 
 
 local function copytab(from, to)
@@ -77,6 +111,13 @@ local function expandCategory(category)
   AchievementFrameCategories_Update()
 end
 
+local function numAchievementsInCategory(cat)
+  if (AchievementFrame) then  return GetCategoryNumAchievements(cat);  end
+  local n = 0
+  while (GetAchievementInfo(cat, n + 1)) do  n = n + 1;  end
+  return n
+end
+
 local function isAchievementInUI(id, checkNext)
 -- Return true if the achievement should be found in the standard UI
   if (checkNext) then
@@ -93,7 +134,7 @@ local function isAchievementInUI(id, checkNext)
     end
   end
   local cat = GetAchievementCategory(id)
-  for i=1,GetCategoryNumAchievements(cat) do
+  for i=1,numAchievementsInCategory(cat) do
     if (GetAchievementInfo(cat, i) == id) then  return true;  end
   end
 end
@@ -114,7 +155,6 @@ local function openToAchievement(id, canToggleTracking)
     end
   else
     UIErrorsFrame:AddMessage(L.MSG_ACHNOTFOUND, 1.0, 0.1, 0.1, 1.0)
-    --chatprint(L.MSG_ACHNOTFOUND)
   end
 end
 
@@ -140,7 +180,7 @@ do
     if (getAll) then  found = found and wipe(found) or {};  end
     if (anyCase) then  pattern = strlower(pattern);  end
     local id, ret, anyFound
-    for i=1,GetCategoryNumAchievements(category) do
+    for i=1,numAchievementsInCategory(category) do
       id, ret = get_arg1_argN(argnum, GetAchievementInfo(category, i))
       if (anyCase) then  ret = strlower(ret);  end
       if ( strfind(ret, pattern, 1, true) ) then
@@ -263,7 +303,7 @@ end
 -- ACHIEVEMENT ID LOOKUP
 --------------------------
 
-local getAllAchievements --, getAllAchievementsInCat
+local getAllAchievements
 do
   local ALL_ACHIEVEMENTS
   function getAllAchievements()
@@ -275,36 +315,19 @@ do
     end
     ALL_ACHIEVEMENTS = {}
     local gap, i, size, id = 0, 0, 0
-    --local debug_largestgap = 0
     repeat
       i = i + 1
       id = GetAchievementInfo(i)
       if (id) then
-        --if (gap > debug_largestgap) then debug_largestgap = gap; print("high gap:",debug_largestgap); end
         gap = 0
         if (catlookup[GetAchievementCategory(id)]) then  size = size + 1; ALL_ACHIEVEMENTS[size] = id;  end
       else
         gap = gap + 1
       end
-    until (gap > 1000) -- 1000 is arbitrary. As of this writing, the largest gap is 79, but this is more future-safe.
-    --print("last ach ID:",ALL_ACHIEVEMENTS[size], "/ size:",size)
+    until (gap > 10000)
     catlookup = nil
     return ALL_ACHIEVEMENTS
   end
-
-  --[[
-  local ALL_ACHIEVEMENTS_BYCAT
-  function getAllAchievementsInCat(cat)
-    ALL_ACHIEVEMENTS_BYCAT = ALL_ACHIEVEMENTS_BYCAT or {}
-    if (ALL_ACHIEVEMENTS_BYCAT[cat]) then  return ALL_ACHIEVEMENTS_BYCAT[cat];  end
-    local tab, size, list = {}, 0, getAllAchievements()
-    for i,id in ipairs(list) do
-      if (GetAchievementCategory(id) == cat) then  size = size + 1; tab[size] = id;  end
-    end
-    ALL_ACHIEVEMENTS_BYCAT[cat] = tab
-    return tab
-  end
-  --]]
 end
 
 local function BuildCriteriaLookupTab(...)
@@ -315,6 +338,7 @@ local function BuildCriteriaLookupTab(...)
   for x,id in ipairs(list) do
     for i=1,GetAchievementNumCriteria(id) do
       _, critType, _, _, _, _, _, assetID = GetAchievementCriteriaInfo(id, i)
+      Overachiever.YieldIfBusy()
 
       for arg=1,num,3 do
         a, tab, savenum = select(arg, ...)
@@ -342,27 +366,51 @@ local function BuildCriteriaLookupTab(...)
   end
 end
 
-local AchLookup_metaach, AchLookup_kill
+local AchLookup_metaach, AchLookup_kill, AchLookup_building
 local function BuildCriteriaLookupTab_check()
+  if (not Overachiever_Settings.UI_RequiredForMetaTooltip) then  AchLookup_metaach = nil;  end
+  if (not Overachiever_Settings.CreatureTip_killed) then
+    AchLookup_kill = nil
+    Overachiever.AchLookup_kill = nil
+  end
+  if (AchLookup_building) then  return;  end
   local meta = not AchLookup_metaach and Overachiever_Settings.UI_RequiredForMetaTooltip
   local kill = not AchLookup_kill and Overachiever_Settings.CreatureTip_killed
-  if (meta and kill) then
-    AchLookup_metaach, AchLookup_kill = {}, {}
-    BuildCriteriaLookupTab(8, AchLookup_metaach, nil, 0, AchLookup_kill, true)
-    Overachiever.AchLookup_kill = AchLookup_kill
-  elseif (meta) then
-    AchLookup_metaach = {}
-    BuildCriteriaLookupTab(8, AchLookup_metaach)
-  elseif (kill) then
-    AchLookup_kill = {}
-    BuildCriteriaLookupTab(0, AchLookup_kill, true)
-    Overachiever.AchLookup_kill = AchLookup_kill
+  if (meta or kill) then
+    AchLookup_building = true
+    Overachiever.RunInBackground(function()
+      local metatab, killtab = {}, {}
+      if (meta and kill) then
+        BuildCriteriaLookupTab(8, metatab, nil, 0, killtab, true)
+      elseif (meta) then
+        BuildCriteriaLookupTab(8, metatab)
+      else
+        BuildCriteriaLookupTab(0, killtab, true)
+      end
+      if (meta and Overachiever_Settings.UI_RequiredForMetaTooltip) then  AchLookup_metaach = metatab;  end
+      if (kill and Overachiever_Settings.CreatureTip_killed) then
+        AchLookup_kill = killtab
+        Overachiever.AchLookup_kill = killtab
+      end
+      AchLookup_building = nil
+      BuildCriteriaLookupTab_check()
+    end)
   end
 end
 
 
 -- DRAGGABLE FRAMES
 ---------------------
+
+local orig_AchievementFrame_area
+
+local function RestoreAchFrameArea()
+  if (orig_AchievementFrame_area) then
+    UIPanelWindows["AchievementFrame"].area = orig_AchievementFrame_area
+    AchievementFrame:SetAttribute("UIPanelLayout-area", orig_AchievementFrame_area);
+    orig_AchievementFrame_area = nil
+  end
+end
 
 local function CheckDraggable_AchFrame(self, key, val, clicked, LoadPos)
   if (AchievementFrame) then
@@ -378,7 +426,8 @@ local function CheckDraggable_AchFrame(self, key, val, clicked, LoadPos)
     elseif (MadeDraggable_AchFrame) then
       TjDragIt.DisableDragging(AchievementFrame, AchievementFrameHeader, AchievementFrameCategoriesContainer,
                                AchievementFrameAchievementsContainer, AchievementFrameStatsContainer,
-                               Overachiever_SearchFrameContainer, Overachiever_SuggestionsFrameContainer)
+                               Overachiever_SearchFrameContainer, Overachiever_SuggestionsFrameContainer,
+                               Overachiever_WatchFrameContainer)
       MadeDraggable_AchFrame = nil
     end
     if (key and AchievementFrame:IsShown()) then
@@ -400,10 +449,11 @@ local function CheckDraggable_AchFrame(self, key, val, clicked, LoadPos)
       AchievementFrame:SetAttribute("UIPanelLayout-enabled", true);
       MadeDragSave_AchFrame = nil
     end
+    if (not Overachiever_Settings.DragSave_AchFrame) then  RestoreAchFrameArea();  end
   end
 end
 
-local orig_AchievementFrame_OnShow, orig_AchievementFrame_area
+local AchievementUI_WasShown
 
 local function AchievementUI_FirstShown_post()
   Overachiever.MainFrame:Hide()
@@ -411,143 +461,60 @@ local function AchievementUI_FirstShown_post()
   -- AchievementFrame is to be shown, AchievementFrame wouldn't be set as the current UI panel by code in
   -- UIParent.lua, which causes problems when we don't want it to interact with other UI panels in the standard
   -- way. (Set now instead of leaving it out because the player may want it to interact normally again later.)
-  if (orig_AchievementFrame_area) then
-    UIPanelWindows["AchievementFrame"].area = orig_AchievementFrame_area
-    AchievementFrame:SetAttribute("UIPanelLayout-area", orig_AchievementFrame_area);
-    orig_AchievementFrame_area = nil
-  end
+  RestoreAchFrameArea()
   CheckDraggable_AchFrame(nil, nil, nil, nil, true)
-  if (not Overachiever_Settings.DragSave_AchFrame) then
-  -- If we aren't saving the position, then re-open the frame to put it in the standard place. (It'll do this
-  -- automatically from now on.)
-    local prevfunc = AchievementFrame:GetScript("OnHide")
-    AchievementFrame:SetScript("OnHide", nil)
-    HideUIPanel(AchievementFrame)
-    AchievementFrame:SetScript("OnHide", prevfunc)
-    prevfunc = AchievementFrame:GetScript("OnShow")
-    AchievementFrame:SetScript("OnShow", nil)
-    ShowUIPanel(AchievementFrame)
-    AchievementFrame:SetScript("OnShow", prevfunc)
-  end
 end
 
-local function AchievementUI_FirstShown(...)
-  AchievementFrame:SetScript("OnShow", orig_AchievementFrame_OnShow)
-  --[[ Pre-3.1 method:
-  AchievementFrame_OnShow = orig_AchievementFrame_OnShow
-  --]]
-  orig_AchievementFrame_OnShow = nil
+local function AchievementUI_FirstShown()
+  if (AchievementUI_WasShown) then  return;  end
+  AchievementUI_WasShown = true
   -- Delayed call to AchievementUI_FirstShown_post() - let everything else process first:
   Overachiever.MainFrame:Show()
-  -- Call original function:
-  AchievementFrame_OnShow(...)
-  AchievementUI_FirstShown = nil
 end
 
 
 -- ACHIEVEMENT HYPERLINK HOOK
 -------------------------------
 
---local orig_SetItemRef = SetItemRef
-local orig_ChatFrame_OnHyperlinkShow = ChatFrame_OnHyperlinkShow
-ChatFrame_OnHyperlinkShow = function(self, link, text, button, ...)
+hooksecurefunc("ChatFrame_OnHyperlinkShow", function(self, link)
   if (strsub(link, 1, 11) == "achievement") then
+    local id, done = tonumber((strsplit(":", strsub(link, 13))))
     if (IsControlKeyDown()) then
-      local id = strsplit(":", strsub(link, 13));
-      id = tonumber(id)
       openToAchievement(id, true)
-      return;
+      done = true
     elseif (IsAltKeyDown()) then
       if (not AchievementFrame) then  AchievementFrame_LoadUI();  end
       if (Overachiever_WatchFrame) then
-        local id = strsplit(":", strsub(link, 13));
-        id = tonumber(id)
         Overachiever_WatchFrame.SetAchWatchList(id, true)
-        return;
+        done = true
       end
     end
+    if (done and ItemRefTooltip:IsShown() and ItemRefTooltipTextLeft1:GetText() == (select(2, GetAchievementInfo(id)))) then
+      ItemRefTooltip:Hide()
+    end
   end
-  return orig_ChatFrame_OnHyperlinkShow(self, link, text, button, ...)
-end
+end)
 
 -- ACHIEVEMENT TRACKER CHANGES
 --------------------------------
 
-local orig_WatchFrameLinkButtonTemplate_OnLeftClick = WatchFrameLinkButtonTemplate_OnLeftClick
-
-if WatchFrameLinkButtonTemplate_OnLeftClick then
-  WatchFrameLinkButtonTemplate_OnLeftClick = function(self, ...)
-    if (self.type == "ACHIEVEMENT") then
-      CloseDropDownMenus()
-      if (IsShiftKeyDown()) then
-        if ( ChatEdit_GetActiveWindow() ) then
-          ChatEdit_InsertLink(GetAchievementLink(self.index));
-        else
-          ChatFrame_OpenChat(GetAchievementLink(self.index));
-        end
-      else
-        -- We prefer an openToAchievement() call instead of a direct AchievementFrame_SelectAchievement() call, so
-        -- we do this here instead of calling orig_WatchFrameLinkButtonTemplate_OnLeftClick():
-        openToAchievement(self.index)
-      end
-      return;
-    end
-    orig_WatchFrameLinkButtonTemplate_OnLeftClick(self, ...)
+local function TrackerBlockOnEnter(module, block)
+  local button = block.HeaderButton
+  GameTooltip:SetOwner(button, "ANCHOR_NONE")
+  if (button:GetCenter() > UIParent:GetWidth() / 3) then
+    GameTooltip:SetPoint("TOPRIGHT", button, "TOPLEFT", -2, 0)
+  else
+    GameTooltip:SetPoint("TOPLEFT", button, "TOPRIGHT", 2, 0)
   end
+  GameTooltip:SetHyperlink( GetAchievementLink(block.id) )
 end
 
--- Проверяем существование WatchFrame_OpenAchievementFrame перед переопределением
-if WatchFrame_OpenAchievementFrame then
-  WatchFrame_OpenAchievementFrame = function(button, arg1, arg2, checked)
-    -- Take over reaction to clicking "Open Achievement" in the watch frame's right-click popup menu, preventing
-    -- lock ups if tracking an achievement not in the UI as well as using openToAchievement(), which we prefer, instead of
-    -- a direct AchievementFrame_SelectAchievement() call.
-    openToAchievement(arg1)
-  end
+local function TrackerBlockOnLeave(module, block)
+  if (GameTooltip:IsOwned(block.HeaderButton)) then  GameTooltip:Hide();  end
 end
 
-local function TrackerBtnOnEnter(self)
-  if (self.type ~= "ACHIEVEMENT") then  return;  end
-  if GameTooltip then
-    GameTooltip:SetOwner(self, "ANCHOR_NONE")
-    local x, y = self:GetCenter()
-    local w = UIParent:GetWidth() / 3
-    if (x > w) then
-      GameTooltip:SetPoint("TOPRIGHT", self, "TOPLEFT", -2, 0)
-    else
-      GameTooltip:SetPoint("TOP", self, "TOP", 0, 0)
-      if WatchFrame then
-        GameTooltip:SetPoint("LEFT", WatchFrame, "RIGHT", -8, 0)
-      end
-    end
-    GameTooltip:SetHyperlink( GetAchievementLink(self.index) )
-  end
-end
-
-local function TrackerBtnOnLeave()
-  if GameTooltip then
-    GameTooltip:Hide()
-  end
-end
-
--- Hook current Watch Frame Link Buttons (если таблица существует):
-if WATCHFRAME_LINKBUTTONS then
-  for k, v in pairs(WATCHFRAME_LINKBUTTONS) do
-    v.OverachieverHooked = true
-    v:HookScript("OnEnter", TrackerBtnOnEnter)
-    v:HookScript("OnLeave", TrackerBtnOnLeave)
-  end
-
-  -- Hook future Watch Frame Link Buttons when they are created:
-  setmetatable(WATCHFRAME_LINKBUTTONS, { __newindex = function(t, k, v)
-    rawset(t, k, v)
-    if (not v.OverachieverHooked) then
-      v.OverachieverHooked = true
-      v:HookScript("OnEnter", TrackerBtnOnEnter)
-      v:HookScript("OnLeave", TrackerBtnOnLeave)
-    end
-  end })
-end
+hooksecurefunc(AchievementObjectiveTracker, "OnBlockHeaderEnter", TrackerBlockOnEnter)
+hooksecurefunc(AchievementObjectiveTracker, "OnBlockHeaderLeave", TrackerBlockOnLeave)
 
 
 local function getExplorationAch(zonesOnly, ...)
@@ -576,6 +543,7 @@ local AutoTrackedAch_explore
 local function AutoTrackCheck_Explore(noClearing)
 -- noClearing will evaluate to true when called through TjOptions since it passes an object for this first arg.
   if (Overachiever_Settings.Explore_AutoTrack) then
+    Overachiever.MainFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
     local id
     if (not IsInInstance()) then
       local zone = GetRealZoneText()
@@ -607,37 +575,9 @@ local function AutoTrackCheck_Explore(noClearing)
       RemoveTrackedAchievement(AutoTrackedAch_explore)
       AutoTrackedAch_explore = nil
     end
+  else
+    Overachiever.MainFrame:UnregisterEvent("ZONE_CHANGED_NEW_AREA")
   end
-end
-
-
--- META-CRITERIA TOOLTIP
---------------------------
-
-local orig_AchievementButton_GetMeta
-
-local function MetaCriteriaOnEnter(self)
-  if (self.id) then
-    GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
-    local link = GetAchievementLink(self.id)
-    GameTooltip:SetHyperlink(link)
-    if (GameTooltip:GetBottom() < self:GetTop()) then
-      GameTooltip:ClearAllPoints()
-      GameTooltip:SetPoint("TOPLEFT", self, "BOTTOMLEFT")
-    end
-  -- If for some reason the ID isn't there but a date completed is (something that probably shouldn't happen), fall
-  -- back to the way tooltips were handled in Blizzard_AchievementUI.xml's MetaCriteriaTemplate:
-  elseif ( self.date ) then
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT");
-    GameTooltip:AddLine(string.format(ACHIEVEMENT_META_COMPLETED_DATE, self.date), 1, 1, 1);
-    GameTooltip:Show();
-  end
-end
-
-local function new_AchievementButton_GetMeta(...)
-  local frame = orig_AchievementButton_GetMeta(...)
-  frame:SetScript("OnEnter", MetaCriteriaOnEnter)
-  return frame;
 end
 
 
@@ -673,7 +613,7 @@ do
           tooltip:AddLine(name, r_com, g_com, b_com)
           tooltip:AddTexture("Interface\\RAIDFRAME\\ReadyCheck-Ready");
         else
-          tooltip:AddLine(name, 1, 1, 1) --, r_inc, g_inc, b_inc)
+          tooltip:AddLine(name, 1, 1, 1)
           if (anycomplete) then
             tooltip:AddTexture(""); -- fake texture to push the text over
           end
@@ -686,7 +626,7 @@ do
         tooltip:AddLine(name, r_com, g_com, b_com)
         tooltip:AddTexture("Interface\\RAIDFRAME\\ReadyCheck-Ready");
       else
-        tooltip:AddLine(name, 1, 1, 1) --, r_inc, g_inc, b_inc)
+        tooltip:AddLine(name, 1, 1, 1)
       end
     end
   end
@@ -730,7 +670,7 @@ do
       GameTooltip:AddLine(" ")
     end
 
-    if (Overachiever_Settings.UI_RequiredForMetaTooltip and AchLookup_metaach[id]) then
+    if (Overachiever_Settings.UI_RequiredForMetaTooltip and AchLookup_metaach and AchLookup_metaach[id]) then
       if (not tipset) then
         GameTooltip:SetOwner(self, "ANCHOR_NONE")
         GameTooltip:SetPoint("TOPLEFT", self, "TOPRIGHT", 8, 0)
@@ -786,10 +726,23 @@ end
 function Overachiever.OnEvent(self, event, arg1, ...)
   if (event == "PLAYER_ENTERING_WORLD") then
     Overachiever.MainFrame:UnregisterEvent("PLAYER_ENTERING_WORLD")
-    Overachiever.MainFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 
     BuildCategoryInfo()
     BuildCategoryInfo = nil
+
+    if (Overachiever_Settings) then
+      local renamed = {
+        ["Blizzard: Alarm Clock 1"] = "SOUND_ALARM1",
+        ["Blizzard: Alarm Clock 2"] = "SOUND_ALARM2",
+        ["Blizzard: Alarm Clock 3"] = "SOUND_ALARM3",
+        ["Blizzard: Колокол - Прибытие коробля"] = "SOUND_BELL_BOATARRIVED",
+        ["Blizzard: Колокол - Начной Эльф"] = "SOUND_BELL_NIGHTELF",
+        ["Blizzard: Гонг - Троль"] = "SOUND_GONG_TROLL",
+        ["Blizzard: Привязка камня возвражения"] = "SOUND_HEARTHBIND",
+      }
+      local key = renamed[Overachiever_Settings.SoundAchIncomplete]
+      if (key) then  Overachiever_Settings.SoundAchIncomplete = "Blizzard: "..L[key];  end
+    end
 
     local oldver
     OptionsPanel, oldver = Overachiever.CreateOptions(THIS_TITLE, BuildCriteriaLookupTab_check, AutoTrackCheck_Explore, CheckDraggable_AchFrame)
@@ -807,29 +760,15 @@ function Overachiever.OnEvent(self, event, arg1, ...)
         if (settings[k] == nil) then  settings[k] = v;  end
       end
 
-      if (tonumber(oldver) < 0.40 and Overachiever_CharVars_Default) then
+      if ((tonumber(oldver) or 0) < 0.40 and Overachiever_CharVars_Default) then
         Overachiever_CharVars_Default.Pos_AchievementWatchFrame = nil
       end
     end
 
     if (Overachiever_CharVars) then
-      oldver = tonumber(Overachiever_CharVars.Version)
+      oldver = tonumber(Overachiever_CharVars.Version) or 0
       if (oldver < 0.40) then  Overachiever_CharVars.Pos_AchievementWatchFrame = nil;  end
       if (oldver < 0.55) then  Overachiever_CharVars.TrackedAch = nil;  end  -- No longer necessary as between-session objective tracking is now done by WoW itself.
-
-     --[[  No longer necessary as this is now done by WoW itself:
-      local tracked = Overachiever_CharVars.TrackedAch
-      if (tracked and GetNumTrackedAchievements() == 0) then
-      -- Resume tracking from last session:
-        if (type(tracked) == "table") then
-          for i,id in ipairs(tracked) do
-            AddTrackedAchievement(id)
-          end
-        else
-          AddTrackedAchievement(tracked)
-        end
-      end
-     --]]
     else
       Overachiever_CharVars = {};
     end
@@ -837,26 +776,15 @@ function Overachiever.OnEvent(self, event, arg1, ...)
 
     AutoTrackCheck_Explore(true)
 
-    -- Проверяем существование GameTooltip перед созданием хуков
-    if GameTooltip then
-      GameTooltip:HookScript("OnTooltipSetUnit", Overachiever.ExamineSetUnit)
-      GameTooltip:HookScript("OnShow", Overachiever.ExamineOneLiner)
-      GameTooltip:HookScript("OnTooltipSetItem", Overachiever.ExamineItem)
-    end
-    
-    -- Проверяем существование ItemRefTooltip перед созданием хуков
-    if ItemRefTooltip then
-      ItemRefTooltip:HookScript("OnTooltipSetItem", Overachiever.ExamineItem)
-      hooksecurefunc(ItemRefTooltip, "SetHyperlink", Overachiever.ExamineAchievementTip)
-    end
-    
-    -- Проверяем существование GameTooltip перед созданием хуков
-    if GameTooltip then
-      hooksecurefunc(GameTooltip, "SetHyperlink", Overachiever.ExamineAchievementTip)
-    end
+    GameTooltip:HookScript("OnTooltipSetUnit", Overachiever.ExamineSetUnit)
+    GameTooltip:HookScript("OnShow", Overachiever.ExamineOneLiner)
+    GameTooltip:HookScript("OnTooltipSetItem", Overachiever.ExamineItem)
+    hooksecurefunc(GameTooltip, "SetHyperlink", Overachiever.ExamineAchievementTip)
+    ItemRefTooltip:HookScript("OnTooltipSetItem", Overachiever.ExamineItem)
+    hooksecurefunc(ItemRefTooltip, "SetHyperlink", Overachiever.ExamineAchievementTip)
 
     if Overachiever.BuildItemLookupTab then
-      Overachiever.BuildItemLookupTab()
+      Overachiever.RunInBackground(Overachiever.BuildItemLookupTab)
       Overachiever.BuildItemLookupTab = nil
     end
     
@@ -883,34 +811,21 @@ function Overachiever.OnEvent(self, event, arg1, ...)
   elseif (event == "ADDON_LOADED" and arg1 == "Blizzard_AchievementUI") then
     Overachiever.MainFrame:UnregisterEvent("ADDON_LOADED")
     
-    -- Meta-criterea creation intercept:
-    if AchievementButton_GetMeta then
-      orig_AchievementButton_GetMeta = AchievementButton_GetMeta
-      AchievementButton_GetMeta = new_AchievementButton_GetMeta
-    end
-    
     -- Add "series" tooltip to default achievement buttons:
-    if AchievementFrameAchievements and AchievementFrameAchievements.buttons and AchievementFrameAchievementsContainerScrollBar then
-      Overachiever.UI_HookAchButtons(AchievementFrameAchievements.buttons, AchievementFrameAchievementsContainerScrollBar)
-    end
-    
+    Overachiever.UI_HookAchButtons(AchievementFrameAchievements.buttons, AchievementFrameAchievementsContainerScrollBar)
+
     -- Allow closing frame with Escape even when UIPanelLayout-enabled is set to false:
-    if type(tinsert) == "function" then
-      tinsert(UISpecialFrames, "AchievementFrame")
-    end
-    
+    tinsert(UISpecialFrames, "AchievementFrame")
+
     -- Make main achievement UI draggable:
-    if AchievementFrame and UIPanelWindows and UIPanelWindows["AchievementFrame"] then
-      -- - Prevent UIParent.lua from seeing area field (or it'll do things that mess up making the frame draggable).
+    -- - Prevent UIParent.lua from seeing area field (or it'll do things that mess up making the frame draggable).
+    if (Overachiever_Settings and Overachiever_Settings.DragSave_AchFrame) then
       orig_AchievementFrame_area = UIPanelWindows["AchievementFrame"].area
       UIPanelWindows["AchievementFrame"].area = nil
-      -- - Hook the first OnShow call to complete this. (Not done now in case saved variables aren't ready or the frame
-      --   isn't showing right away.)
-      orig_AchievementFrame_OnShow = AchievementFrame:GetScript("OnShow")
-      if orig_AchievementFrame_OnShow then
-        AchievementFrame:SetScript("OnShow", AchievementUI_FirstShown)
-      end
     end
+    -- - Hook the first OnShow call to complete this. (Not done now in case saved variables aren't ready or the frame
+    --   isn't showing right away.)
+    AchievementFrame:HookScript("OnShow", AchievementUI_FirstShown)
 
   elseif (event == "PLAYER_LOGOUT") then
     if (Overachiever_CharVars and Overachiever_CharVars.Pos_AchievementFrame) then
@@ -991,11 +906,16 @@ function Overachiever.OpenTab(name)
 end
 
 function Overachiever.UI_SelectAchievement(id, failFunc, ...)
+  if (not AchievementFrame or not AchievementFrame:IsShown()) then
+    chatprint(L.MSG_ACHUI_UNAVAILABLE)
+    return
+  end
   AchievementFrameBaseTab_OnClick(1)
+  AchievementFrameAchievements_ClearSelection()
   Overachiever.NoAlterSetFilter = true
-  local retOK, ret1 = pcall(AchievementFrame_SelectAchievement, id)
+  AchievementFrame_SelectAchievement(id)
   Overachiever.NoAlterSetFilter = nil
-  if (retOK) then
+  if (AchievementFrameAchievements.selection) then
     local category = GetAchievementCategory(id)
     local _, parentID = GetCategoryInfo(category)
     if (parentID == -1) then
@@ -1003,9 +923,7 @@ function Overachiever.UI_SelectAchievement(id, failFunc, ...)
     end
   else
     chatprint(L.MSG_ACHNOTFOUND)
-    if (Overachiever_Debug) then
-      chatprint(ret1, "[Error]")
-    elseif (failFunc) then
+    if (failFunc) then
       failFunc(...)
     else
     -- Open to summary to hide potentially problematic (though interesting) listing of irregular achievements:
@@ -1078,103 +996,6 @@ SlashCmdList["Overachiever_silentAch"] = function(msg, self)  slashHandler(msg, 
 SlashCmdList["ACHIEVEMENTUI"] = slashHandler;
 
 
--- LOCALIZATION ASSIST
---------------------------
-
-if (Overachiever_Debug) then
-
-  function Overachiever.Debug_GetKillCriteriaAchs()
-    if (not Overachiever.AchLookup_kill) then  return;  end
-    local tab, _, a = {}
-    for k,v in pairs(Overachiever.AchLookup_kill) do
-      for i = 1, #v, 2 do
-        _, a = GetAchievementInfo( v[i] )
-        tab[a] = (tab[a] or 0) + 1
-      end
-    end
-    return tab
-  end
-
-  -- Achievement and criteria data gathering:
-
-  function Overachiever.Debug_GetAchData()
-    local tab = Overachiever_Settings.Debug_AchData
-    if (not tab) then  Overachiever_Settings.Debug_AchData = {};  tab = Overachiever_Settings.Debug_AchData;  end
-    local _, Name, Points, Completed, Month, Day, Year, Description, Flags, Image, RewardText
-    local critString, critType, completed, quantity, reqQuantity, charName, flags, assetID, quantityString, critID
-    for k,id in pairs(OVERACHIEVER_ACHID) do
-      _, Name, Points, Completed, Month, Day, Year, Description, Flags, Image, RewardText = GetAchievementInfo(id)
-      tab[id] = { Name = Name, Description = Description, RewardText = RewardText }
-      tab[id].Criteria = {}
-      local crit = tab[id].Criteria
-      for i=1,GetAchievementNumCriteria(id) do
-        critString, critType, completed, quantity, reqQuantity, charName, flags, assetID, quantityString, critID = GetAchievementCriteriaInfo(id, i)
-        if (not strfind(quantityString, "/")) then  quantityString = nil;  end
-        crit[i] = { critString = critString, quantityString = quantityString }
-      end
-    end
-    chatprint("Achievement/criteria data gathered. Reload the interface or log out to output to saved variables file.")
-  end
-
-  -- Zone data gathering:
-
-  local ZoneID
-
-  local function BuildZoneIDTable_z(connum, num, zonename, next, ...)
-    num = num + 1
-    ZoneID[zonename] = {}
-    ZoneID[zonename].C = connum
-    ZoneID[zonename].Z = num
-    if (next) then
-      BuildZoneIDTable_z(connum, num, next, ...)
-    end
-  end
-
-  -- Intended first call: BuildZoneIDTable(0, GetMapContinents());
-  local function BuildZoneIDTable(num, conname, next, ...)
-    num = num + 1
-    --print("BuildZoneIDTable: "..conname.." ("..num..")")
-    BuildZoneIDTable_z(num, 0, GetMapZones(num))
-    if (next) then
-      BuildZoneIDTable(num, next, ...)
-    end
-  end
-
-  -- /run Overachiever.Debug_GetExplorationData(true)
-  function Overachiever.Debug_GetExplorationData(testAchMatch, saveZoneIDs)
-    if (not ZoneID and (testAchMatch or saveZoneIDs)) then
-      ZoneID = {}
-      BuildZoneIDTable(0, GetMapContinents());
-      chatprint("Zone data gathered.")
-    end
-    if (saveZoneIDs) then  Overachiever_Settings.Debug_ZoneData = ZoneID;  end
-
-    local tab = {}
-    local catname, id, name, trimname
-    for _, category in ipairs(CATEGORIES_EXPLOREZONES) do
-      catname = GetCategoryInfo(category)
-      tab[catname] = {}
-      for i=1,GetCategoryNumAchievements(category) do
-        id, name = GetAchievementInfo(category, i)
-        if (testAchMatch) then
-          trimname = strsub(name,9) -- Cut off "Explore " - meant for use with English client only
-          if (trimname and ZoneID[trimname]) then
-            name = trimname
-          else
-            chatprint("Achievement name doesn't match a zone: "..name)
-            name = "!! "..name
-          end
-        end
-        tab[catname][name] = id;
-      end
-    end
-    Overachiever_Settings.Debug_ExplorationData = tab
-    chatprint("Exploration Achievement data gathered. Reload the interface or log out to output to saved variables file.")
-  end
-
-end
-
-
 -- FRAME INITIALIZATION
 --------------------------
 
@@ -1182,7 +1003,6 @@ Overachiever.MainFrame = CreateFrame("Frame")
 Overachiever.MainFrame:Hide()
 Overachiever.MainFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 Overachiever.MainFrame:RegisterEvent("ADDON_LOADED")
---Overachiever.MainFrame:RegisterEvent("ACHIEVEMENT_EARNED")
 Overachiever.MainFrame:RegisterEvent("TRACKED_ACHIEVEMENT_UPDATE")
 Overachiever.MainFrame:RegisterEvent("PLAYER_LOGOUT")
 

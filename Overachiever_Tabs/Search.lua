@@ -25,7 +25,11 @@ end
 
 local AchSearch = Overachiever.SearchForAchievement
 
+local critCache = {}
+
 local function findCriteria(id, pattern)
+  local cached = critCache[id]
+  if (cached) then  return strfind(cached, pattern, 1, true);  end
   local critString, foundCrit
   for i=1,GetAchievementNumCriteria(id) do
     critString = GetAchievementCriteriaInfo(id, i)
@@ -107,6 +111,36 @@ local EditAny, EditName, EditDesc, EditCriteria, EditReward
 local SubmitBtn, ResetBtn, ResultsLabel
 local FullListCheckbox
 
+local critCacheStarted
+
+local function buildCritCache()
+  local parts = {}
+  local function indexCriteria(id)
+    if (not id or critCache[id]) then  return;  end
+    local n = GetAchievementNumCriteria(id)
+    for i=1,n do
+      parts[i] = GetAchievementCriteriaInfo(id, i) or ""
+      Overachiever.YieldIfBusy()
+    end
+    critCache[id] = strlower(table.concat(parts, "\n", 1, n))
+  end
+  for _,cat in ipairs(CATEGORIES_ALL) do
+    for i=1,GetCategoryNumAchievements(cat) do
+      indexCriteria((GetAchievementInfo(cat, i)))
+    end
+  end
+  for _,id in ipairs(Overachiever.GetAllAchievements()) do
+    indexCriteria(id)
+  end
+  frame.CritCacheReady = true
+end
+
+local function startCritCache()
+  if (critCacheStarted) then  return;  end
+  critCacheStarted = true
+  Overachiever.RunInBackground(buildCritCache)
+end
+
 local function SortDrop_OnSelect(self, value)
   VARS.SearchSort = value
   frame.sort = value
@@ -131,6 +165,8 @@ end
 
 frame, panel = Overachiever.BuildNewTab("Overachiever_SearchFrame", L.SEARCH_TAB,
                  "Interface\\AddOns\\Overachiever_Tabs\\SearchWatermark", L.SEARCH_HELP, OnLoad)
+frame.CritCache = critCache
+frame:HookScript("OnShow", startCritCache)
 
 sortdrop = TjDropDownMenu.CreateDropDown("Overachiever_SearchFrameSortDrop", panel, {
   {
@@ -155,6 +191,7 @@ sortdrop:SetPoint("TOPLEFT", panel, "TOPLEFT", -16, -22)
 sortdrop:OnSelect(SortDrop_OnSelect)
 
 local function beginSearch()
+  startCritCache()
   PlaySound("igMainMenuOptionCheckBoxOn")
   local name, desc, criteria, reward, any = EditName:GetText(), EditDesc:GetText(), EditCriteria:GetText(), EditReward:GetText(), EditAny:GetText()
   if (name == "" and desc == "" and criteria == "" and reward == "" and any == "") then  -- all fields are blank
@@ -263,22 +300,3 @@ ResetBtn:SetScript("OnClick", resetEditBoxes)
 ResultsLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
 ResultsLabel:SetPoint("TOPLEFT", SubmitBtn, "BOTTOMLEFT", 0, -8)
 ResultsLabel:Hide()
-
-
---[[
-function Overachiever.Debug_GetIDRange()
-  local gap, i, id, firstid, lastid = 0, 0
-  repeat
-    i = i + 1
-    firstid = GetAchievementInfo(i)
-    assert(i < 1000)
-  until (firstid)
-  repeat
-    i = i + 1
-    id = GetAchievementInfo(i)
-    if (id) then  gap, lastid = 0, id;  else  gap = gap + 1;  end
-  until (gap > 1000)
-  print("ID range: {", firstid, ",", lastid, "}")
-end
--- Last check: WoW 3.2: { 6 , 4316 }
---]]
