@@ -16,28 +16,39 @@ end
 local tabs, tabselected
 local LeftFrame
 
-local function emptyfunc() end
-
 local ACHIEVEMENTUI_FONTHEIGHT
 
 local FilterByTab = {}
-local orig_AchievementFrame_SetFilter = AchievementFrame_SetFilter
+local stdScroll = 0
 
-AchievementFrame_SetFilter = function(value, tabswitch)
+hooksecurefunc("AchievementFrame_SetFilter", function(value, tabswitch)
   if (not tabswitch) then
     local frame = tabselected or AchievementFrameAchievements
     FilterByTab[frame] = value
     Overachiever_Tabs_Settings.AchFilters[frame:GetName()] = value
   end
   if (not Overachiever.NoAlterSetFilter and (tabswitch or tabselected)) then
-    local own_SetValue = rawget(AchievementFrameAchievementsContainerScrollBar, "SetValue")
-    AchievementFrameAchievementsContainerScrollBar.SetValue = emptyfunc
-    orig_AchievementFrame_SetFilter(value)
-    AchievementFrameAchievementsContainerScrollBar.SetValue = own_SetValue
-  else
-    return orig_AchievementFrame_SetFilter(value)
+    AchievementFrameAchievementsContainerScrollBar:SetValue(stdScroll)
   end
-end
+end)
+
+AchievementFrameAchievementsContainerScrollBar:HookScript("OnValueChanged", function(self, value)
+  if (not tabselected) then  stdScroll = value;  end
+end)
+
+local subframes = {}
+
+hooksecurefunc("AchievementFrame_ShowSubFrame", function(...)
+  local subFrame, show
+  for _, name in ipairs(subframes) do
+    subFrame = _G[name]
+    show = false
+    for i = 1, select("#", ...) do
+      if (subFrame == select(i, ...)) then  show = true;  end
+    end
+    if (show) then  subFrame:Show();  else  subFrame:Hide();  end
+  end
+end)
 
 
 local function getFrameOfButton(button)
@@ -585,7 +596,7 @@ function Overachiever.BuildNewTab(name, text, watermark, helptip, loadFunc, filt
       getmetatable(self).__index.Hide(self);
     end
 
-  tinsert(ACHIEVEMENTFRAME_SUBFRAMES, name)
+  tinsert(subframes, name)
 
   tab.watermark, tab.loadFunc = watermark, loadFunc
   tab.frame = frame
@@ -726,7 +737,7 @@ do
   LeftFrame:SetScript("OnShow", LeftFrame_OnShow)
   LeftFrame:SetScript("OnHide", LeftFrame_OnHide)
 
-  tinsert(ACHIEVEMENTFRAME_SUBFRAMES, "Overachiever_LeftFrame")
+  tinsert(subframes, "Overachiever_LeftFrame")
 
   LeftFrame:RegisterEvent("ADDON_LOADED")
   LeftFrame:SetScript("OnEvent", function(self, event, arg1)

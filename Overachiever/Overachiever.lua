@@ -406,7 +406,6 @@ local orig_AchievementFrame_area
 
 local function RestoreAchFrameArea()
   if (orig_AchievementFrame_area) then
-    UIPanelWindows["AchievementFrame"].area = orig_AchievementFrame_area
     AchievementFrame:SetAttribute("UIPanelLayout-area", orig_AchievementFrame_area);
     orig_AchievementFrame_area = nil
   end
@@ -820,8 +819,13 @@ function Overachiever.OnEvent(self, event, arg1, ...)
     -- Make main achievement UI draggable:
     -- - Prevent UIParent.lua from seeing area field (or it'll do things that mess up making the frame draggable).
     if (Overachiever_Settings and Overachiever_Settings.DragSave_AchFrame) then
-      orig_AchievementFrame_area = UIPanelWindows["AchievementFrame"].area
-      UIPanelWindows["AchievementFrame"].area = nil
+      local layout = UIPanelWindows["AchievementFrame"]
+      orig_AchievementFrame_area = layout.area
+      AchievementFrame:SetAttribute("UIPanelLayout-defined", true)
+      for k, v in pairs(layout) do
+        if (k ~= "area") then  AchievementFrame:SetAttribute("UIPanelLayout-"..k, v);  end
+      end
+      AchievementFrame:SetAttribute("UIPanelLayout-enabled", true)
     end
     -- - Hook the first OnShow call to complete this. (Not done now in case saved variables aren't ready or the frame
     --   isn't showing right away.)
@@ -992,8 +996,9 @@ SLASH_Overachiever_silentAch1 = "/achsilent";
 SLASH_Overachiever_silentAch2 = "/achs";
 SlashCmdList["Overachiever_silentAch"] = function(msg, self)  slashHandler(msg, self, true);  end;
 
--- Replace the original slash command handler for /ach, /achieve, /achievement, and /achievements:
-SlashCmdList["ACHIEVEMENTUI"] = slashHandler;
+hooksecurefunc(SlashCmdList, "ACHIEVEMENTUI", function(msg, self)
+  if (msg ~= "") then  slashHandler(msg, self);  end
+end)
 
 
 -- FRAME INITIALIZATION
