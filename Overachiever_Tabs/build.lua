@@ -426,6 +426,7 @@ end
 local function tabUnselect()
   tabselected = nil
   for k,tab in ipairs(tabs) do
+    PanelTemplates_DeselectTab(tab)
     tab.text:SetPoint("CENTER", tab, "CENTER", 0, -3)
   end
 end
@@ -445,6 +446,9 @@ local function tabOnClick(self, button)
   LeftFrame.label:SetText(self:GetText())
   AchievementFrameWaterMark:SetTexture(self.watermark)
   PanelTemplates_Tab_OnClick(self, AchievementFrame)
+  for k,tab in ipairs(tabs) do
+    if (tab == self) then  PanelTemplates_SelectTab(tab);  else  PanelTemplates_DeselectTab(tab);  end
+  end
   self.text:SetPoint("CENTER", self, "CENTER", 0, -5)
   local i, tab = 0
   repeat
@@ -547,7 +551,6 @@ function Overachiever.BuildNewTab(name, text, watermark, helptip, loadFunc, filt
   tab:SetText(text)
   tab:SetPoint("LEFT", "AchievementFrameTab"..numtabs-1, "RIGHT", -5, 0)
   tab:SetID(numtabs)
-  PanelTemplates_SetNumTabs(AchievementFrame, numtabs)
 
   local frame = CreateFrame("Frame", name, AchievementFrame)
   frame:SetWidth(504); frame:SetHeight(440)
