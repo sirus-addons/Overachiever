@@ -2,7 +2,7 @@
 ## Title: Overachiever - Tabs
 ## Version: 0.56
 ## Author: Tuhljin
-## Notes: Achievement frame tabs module.
+## Notes: |@Version: 1@|Achievement frame tabs module.
 ## LoadOnDemand: 1
 ## LoadWith: Blizzard_AchievementUI
 ## Dependencies: Overachiever

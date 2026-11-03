@@ -2,7 +2,7 @@
 ## Title: Overachiever
 ## Version: 0.56
 ## Author: Tuhljin
-## Notes: Tools and tweaks to make the lives of players seeking Achievements a little bit easier.
+## Notes: |@Version: 1@|Tools and tweaks to make the lives of players seeking Achievements a little bit easier.
 ## SavedVariables: Overachiever_Settings, Overachiever_CharVars_Default
 ## SavedVariablesPerCharacter: Overachiever_CharVars, Overachiever_CharVars_Consumed
 ## OptionalDeps: LibBabble-Zone-3.0, LibBabble-Inventory-3.0
